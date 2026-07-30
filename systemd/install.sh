@@ -54,18 +54,36 @@ fi
 say "Service is running on http://127.0.0.1:$PORT"
 
 if [[ "$DO_SERVE" == 1 ]]; then
-  if command -v tailscale >/dev/null; then
+  if ! command -v tailscale >/dev/null; then
+    warn "tailscale not found — skipping. labboard is reachable on loopback only."
+  else
     say "Exposing on the tailnet via tailscale serve"
-    if tailscale serve --bg --https=443 "http://127.0.0.1:$PORT"; then
+    # `tailscale serve` blocks forever with no output when it lacks privileges rather
+    # than erroring, so never run it unbounded — a hang here looks like a broken install.
+    set +e
+    timeout 30 tailscale serve --bg --https=443 "http://127.0.0.1:$PORT"
+    rc=$?
+    set -e
+
+    if [[ $rc -eq 0 ]]; then
       DNS="$(tailscale status --json 2>/dev/null \
              | grep -o '"DNSName":"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$//')"
       say "Available at https://${DNS:-<this-node>}"
     else
-      warn "tailscale serve failed — run it manually:"
+      [[ $rc -eq 124 ]] && warn "tailscale serve timed out — it almost always means missing privileges."
+      warn "Could not expose on the tailnet. The service itself is running fine on loopback."
+      warn ""
+      warn "Grant the CLI persistent access (once per machine, needs your password):"
+      warn "  sudo tailscale set --operator=\$USER"
+      warn "then re-run:"
       warn "  tailscale serve --bg --https=443 http://127.0.0.1:$PORT"
+      warn ""
+      warn "Or do it as root without changing the operator:"
+      warn "  sudo tailscale serve --bg --https=443 http://127.0.0.1:$PORT"
+      warn ""
+      warn "HTTPS certificates must also be enabled for the tailnet"
+      warn "(admin console → DNS → HTTPS Certificates)."
     fi
-  else
-    warn "tailscale not found — skipping. labboard is reachable on loopback only."
   fi
 fi
 
