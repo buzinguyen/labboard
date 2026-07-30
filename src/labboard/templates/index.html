@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Pins{% endblock %}
+{% block content %}
+
+<h1>Pinned directories</h1>
+<p class="sub">
+  On <span class="mono">{{ hostname }}</span>. A pin is also the access boundary —
+  only paths beneath one of these can be read.
+</p>
+
+{% if pins %}
+<div class="pin-grid" style="margin-top:16px">
+  {% for pin in pins %}
+  <div class="pin">
+    <h3><a href="/b/{{ pin.id }}">{{ pin.title }}</a></h3>
+    <div class="path mono">{{ pin.path }}</div>
+    {% if not pin.exists %}<div class="gone">⚠ directory is missing or unreadable</div>{% endif %}
+    {% if pin.tags %}
+    <div class="tags">{% for t in pin.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+    {% endif %}
+    {% if pin.note %}<div class="sub">{{ pin.note }}</div>{% endif %}
+    <div class="row" style="margin-top:auto;padding-top:8px">
+      <span class="sub">{{ pin.added[:10] }}</span>
+      <span class="spacer"></span>
+      <form method="post" action="/pins/{{ pin.id }}/delete"
+            onsubmit="return confirm('Unpin {{ pin.title }}?\n\nThis only removes the bookmark. Nothing on disk is touched.')">
+        <button class="ghost" type="submit">Unpin</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  <p>No pins yet.</p>
+  <p class="sub">Add one below, or let an agent register a directory:<br>
+  <code>labboard pin add /path/to/run --title "..."</code></p>
+</div>
+{% endif %}
+
+<h2>Add a pin</h2>
+<form class="panel stack" method="post" action="/pins">
+  <div class="row">
+    <input type="text" name="path" placeholder="/absolute/path/on/{{ hostname }}"
+           style="flex:2 1 340px" required>
+    <input type="text" name="title" placeholder="title (optional)" style="flex:1 1 160px">
+    <input type="text" name="tags" placeholder="tags, comma, separated" style="flex:1 1 160px">
+    <button type="submit">Add</button>
+  </div>
+  <div class="sub">The path must be a directory that exists on this machine.</div>
+</form>
+
+<h2>Cache</h2>
+<div class="panel">
+  <div class="row">
+    <span>Derived thumbnails and transcodes: <strong>{{ cache_size }}</strong>
+      across {{ cache_files }} file{{ '' if cache_files == 1 else 's' }}.</span>
+  </div>
+  <div class="sub" style="margin-top:6px">
+    Regenerated on demand; safe to delete. Originals are never modified.
+    {% if not have_ffmpeg %}
+    <br><span style="color:var(--warn)">⚠ ffmpeg not found — thumbnails and transcoding are disabled.</span>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Tailnet{% endblock %}
+{% block content %}
+
+<h1>Tailnet</h1>
+<p class="sub">
+  Pins from every node, gathered live. Links go <em>directly</em> to the machine that
+  holds the files — nothing is copied here.
+</p>
+
+{% if not nodes %}
+<div class="empty">
+  <p>No tailnet detected.</p>
+  <p class="sub">Is <code>tailscale</code> installed and up on this machine?</p>
+</div>
+{% endif %}
+
+{% for node in nodes %}
+<div class="node">
+  <div class="head">
+    <span class="dot {{ 'up' if node.reachable else ('down' if node.online else '') }}"></span>
+    <strong class="mono">{{ node.name }}</strong>
+    {% if node.is_self %}<span class="tag">this machine</span>{% endif %}
+    <span class="sub mono">{{ node.ip }}</span>
+    <span class="spacer"></span>
+    {% if node.reachable %}
+      <a class="btn ghost" href="{{ node.base_url }}">Open →</a>
+    {% endif %}
+  </div>
+
+  {% if node.reachable %}
+    {% if node.pins %}
+    <div class="pin-grid">
+      {% for pin in node.pins %}
+      <div class="pin">
+        <h3>
+          <a href="{% if node.is_self %}/b/{{ pin.id }}{% else %}{{ node.base_url }}/b/{{ pin.id }}{% endif %}">
+            {{ pin.title }}
+          </a>
+        </h3>
+        <div class="path mono">{{ pin.path }}</div>
+        {% if not pin.exists %}<div class="gone">⚠ missing on {{ node.name }}</div>{% endif %}
+        {% if pin.tags %}
+        <div class="tags">{% for t in pin.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="panel sub">No pins registered on this node yet.</div>
+    {% endif %}
+  {% else %}
+    <div class="panel">
+      <span class="why">
+        {% if node.error == 'offline' %}
+          Offline — last seen by tailscale as down. Its results are simply unavailable until it is back.
+        {% elif node.error == 'timed out' %}
+          Reachable on the tailnet but labboard did not answer within {{ 2 }}s.
+        {% else %}
+          labboard not reachable ({{ node.error or 'unknown' }}) — is the service running and
+          <code>tailscale serve</code> configured?
+        {% endif %}
+      </span>
+    </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}

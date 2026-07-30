@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+
+<div class="crumbs mono">
+  <a href="/">pins</a><span class="sep">/</span>
+  <a href="/b/{{ pin.id }}">{{ pin.title }}</a>
+  {% for label, path in crumbs %}
+    <span class="sep">/</span>
+    {% if loop.last %}<span class="cur">{{ label }}</span>
+    {% else %}<a href="/b/{{ pin.id }}/{{ path }}">{{ label }}</a>{% endif %}
+  {% endfor %}
+</div>
+
+<div class="row" style="margin-bottom:14px">
+  <h1 style="margin:0" class="mono">{{ name }}</h1>
+  <span class="spacer"></span>
+  <span class="sub">{{ size }} · {{ age }}</span>
+  <a class="btn ghost" href="/b/{{ pin.id }}{% if parent %}/{{ parent }}{% endif %}">Up</a>
+  <a class="btn" href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download</a>
+</div>
+
+<div class="viewer">
+{% if kind == 'image' %}
+  <img src="/raw/{{ pin.id }}/{{ rel }}" alt="{{ name }}">
+
+{% elif kind == 'video' %}
+  {% if needs_transcode %}
+  <div class="note warn" style="margin-bottom:12px">
+    Not directly playable in a browser
+    ({{ video_info.vcodec or 'unknown codec' }}{% if video_info.pix_fmt %} / {{ video_info.pix_fmt }}{% endif %}).
+    Serving a transcoded copy — the first load may take a moment. The original is untouched.
+  </div>
+  {% endif %}
+  <video controls preload="metadata" playsinline
+         {% if video_info and video_info.width %}width="{{ video_info.width }}"{% endif %}
+         poster="/thumb/{{ pin.id }}/{{ rel }}">
+    <source src="/video/{{ pin.id }}/{{ rel }}" type="video/mp4">
+    Your browser cannot play this file. <a href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download it</a>.
+  </video>
+  {% if video_info and video_info.vcodec %}
+  <div class="sub mono" style="margin-top:9px">
+    {{ video_info.vcodec }}{% if video_info.pix_fmt %} · {{ video_info.pix_fmt }}{% endif %}
+    {%- if video_info.width %} · {{ video_info.width }}×{{ video_info.height }}{% endif %}
+    {%- if video_info.duration %} · {{ '%.1f'|format(video_info.duration) }}s{% endif %}
+  </div>
+  {% endif %}
+
+{% elif kind == 'audio' %}
+  <audio controls src="/raw/{{ pin.id }}/{{ rel }}" style="width:100%"></audio>
+
+{% elif kind == 'pdf' %}
+  <iframe src="/raw/{{ pin.id }}/{{ rel }}" title="{{ name }}"></iframe>
+
+{% elif kind == 'markdown' %}
+  <div class="prose">{{ body | safe }}</div>
+
+{% elif kind == 'table' %}
+  {% if table %}
+    {% if truncated %}
+    <div class="note" style="margin-bottom:12px">
+      Showing the first {{ table[1] | length }} rows. <a href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download</a> for the rest.
+    </div>
+    {% endif %}
+    <div class="scroll-x">
+      <table class="data">
+        <thead><tr>{% for h in table[0] %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in table[1] %}<tr>{% for c in row %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="note">Too large to preview inline. <a href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download</a> it.</div>
+  {% endif %}
+
+{% elif kind == 'text' %}
+  {% if body %}
+    {{ body | safe }}
+  {% else %}
+    <div class="note">Too large to preview inline. <a href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download</a> it.</div>
+  {% endif %}
+
+{% else %}
+  <div class="empty">
+    <p>No inline preview for this file type.</p>
+    <p><a class="btn" href="/raw/{{ pin.id }}/{{ rel }}?download=1">Download {{ name }}</a></p>
+    <p class="sub" style="margin-top:16px">
+      Checkpoints and archives are deliberately never previewed — and never copied off this machine.
+    </p>
+  </div>
+{% endif %}
+</div>
+
+{% endblock %}

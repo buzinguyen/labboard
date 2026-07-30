@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Install labboard as a systemd *user* service and expose it on the tailnet.
+#
+# Idempotent — safe to re-run after a `git pull`.
+#
+#   bash systemd/install.sh              # install + start + expose
+#   PORT=9000 bash systemd/install.sh    # non-default port
+#   bash systemd/install.sh --no-serve   # skip the `tailscale serve` step
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PORT="${PORT:-8765}"
+UNIT_DIR="$HOME/.config/systemd/user"
+UNIT="$UNIT_DIR/labboard.service"
+DO_SERVE=1
+[[ "${1:-}" == "--no-serve" ]] && DO_SERVE=0
+
+say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m warn:\033[0m %s\n' "$*" >&2; }
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+command -v uv >/dev/null || die "uv not found — install it first: https://docs.astral.sh/uv/"
+command -v ffmpeg >/dev/null || warn "ffmpeg not found — thumbnails and transcoding will be disabled."
+
+say "Syncing dependencies in $REPO"
+(cd "$REPO" && uv sync --quiet)
+
+say "Creating config and cache directories"
+# ReadWritePaths= requires these to exist before the unit starts.
+mkdir -p "$HOME/.config/labboard" "$HOME/.cache/labboard"
+
+say "Writing $UNIT"
+mkdir -p "$UNIT_DIR"
+sed -e "s|@REPO@|$REPO|g" -e "s|@PORT@|$PORT|g" \
+    "$REPO/systemd/labboard.service.in" > "$UNIT"
+
+say "Enabling service"
+systemctl --user daemon-reload
+systemctl --user enable --now labboard.service
+
+# Without lingering, the service dies when the last SSH session closes — which is
+# exactly the case on the headless workstations this exists to serve.
+if ! loginctl show-user "$USER" --property=Linger 2>/dev/null | grep -q 'Linger=yes'; then
+  say "Enabling linger (keeps the service alive after logout)"
+  loginctl enable-linger "$USER" || warn "could not enable linger; the service will stop at logout"
+fi
+
+sleep 1
+if ! systemctl --user is-active --quiet labboard.service; then
+  warn "service is not active — recent logs:"
+  journalctl --user -u labboard.service -n 20 --no-pager || true
+  die "labboard failed to start"
+fi
+say "Service is running on http://127.0.0.1:$PORT"
+
+if [[ "$DO_SERVE" == 1 ]]; then
+  if command -v tailscale >/dev/null; then
+    say "Exposing on the tailnet via tailscale serve"
+    if tailscale serve --bg --https=443 "http://127.0.0.1:$PORT"; then
+      DNS="$(tailscale status --json 2>/dev/null \
+             | grep -o '"DNSName":"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$//')"
+      say "Available at https://${DNS:-<this-node>}"
+    else
+      warn "tailscale serve failed — run it manually:"
+      warn "  tailscale serve --bg --https=443 http://127.0.0.1:$PORT"
+    fi
+  else
+    warn "tailscale not found — skipping. labboard is reachable on loopback only."
+  fi
+fi
+
+cat <<EOF
+
+  status   systemctl --user status labboard
+  logs     journalctl --user -u labboard -f
+  restart  systemctl --user restart labboard
+  pin      $REPO/.venv/bin/labboard pin add /path/to/results --title "..."
+  remove   systemctl --user disable --now labboard && tailscale serve --https=443 off
+
+EOF

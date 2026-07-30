@@ -1,0 +1,40 @@
+# Template — install.sh substitutes @REPO@ / @PORT@ and writes the result to
+# ~/.config/systemd/user/labboard.service. Do not install this file directly.
+
+[Unit]
+Description=labboard — read-only artifact browser
+Documentation=https://github.com/buzinguyen/labboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.venv/bin/labboard serve --host 127.0.0.1 --port @PORT@
+Restart=on-failure
+RestartSec=5
+
+# Bind to loopback only (see ExecStart); `tailscale serve` is what exposes it to the
+# tailnet, so the service is never reachable from the LAN even if tailscale is down.
+
+# Read-only is a design guarantee, so enforce it at the OS layer too: the service can
+# read $HOME (it must, to serve pins) but can only *write* its own config and cache.
+# If labboard were ever compromised, it still could not modify a training output.
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=%h/.config/labboard %h/.cache/labboard
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+# Never compete with a training job for CPU.
+Nice=15
+CPUWeight=20
+IOWeight=20
+
+[Install]
+WantedBy=default.target
