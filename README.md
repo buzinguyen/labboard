@@ -41,18 +41,57 @@ own URL a complete, working board even when the portal host is down.
 
 ## Install (per node)
 
+Step order matters: `ffmpeg` must exist before the install, and the tailscale *operator*
+must be set before `tailscale serve` — without it, serve blocks forever with no output
+rather than erroring.
+
 ```bash
-git clone git@github.com:buzinguyen/labboard.git
-cd labboard
-bash systemd/install.sh
+# 1. prerequisites (need a real terminal for the sudo password)
+sudo apt update && sudo apt install -y ffmpeg
+sudo tailscale set --operator=$USER
+loginctl enable-linger $USER
+
+# 2. install
+git clone https://github.com/buzinguyen/labboard.git ~/labboard
+cd ~/labboard && bash systemd/install.sh
+
+# 3. add the short-name route: http://<node>/
+tailscale serve --bg --http=80 http://127.0.0.1:8765
+
+# 4. pin your output roots
+labboard pin add <project-output-root> --title "..." --tags <project>
 ```
 
-Installs a systemd **user** service, enables linger so it survives logout on headless
-boxes, and exposes it with `tailscale serve` — which supplies a real HTTPS certificate and
-keeps it reachable only from the tailnet. Nothing is published to the public internet;
-Funnel is never enabled.
+Step 2 installs a systemd **user** service, enables linger so it survives logout on
+headless boxes, symlinks `labboard` into `~/.local/bin`, and exposes it with
+`tailscale serve` — a real HTTPS certificate, reachable only from the tailnet. Nothing is
+published to the public internet; Funnel is never enabled.
 
-Requires `uv` and, for thumbnails and transcoding, `ffmpeg`.
+Requires `uv` and, for thumbnails and transcoding, `ffmpeg`. Clone over **HTTPS** — the
+repo is public, and GitHub SSH auth often fails without a TTY-loaded agent.
+
+Verify with `systemctl --user status labboard` and
+`curl -s http://127.0.0.1:8765/healthz`. The first HTTPS request to a new node takes
+~15s while Let's Encrypt provisions the certificate; warm requests are ~20ms.
+
+### Updating
+
+`uv sync` deletes the site-packages the running process is using, so a restart is not
+optional — skipping it surfaces later as a 500 on `/portal` with an SSL error:
+
+```bash
+cd ~/labboard && git pull && uv sync && systemctl --user restart labboard
+```
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `tailscale serve` hangs with no output | operator not set — run step 1 |
+| `systemctl --user`: `Failed to connect to bus` over SSH | `export XDG_RUNTIME_DIR=/run/user/$(id -u)` |
+| `Too many authentication failures` on SSH | agent offers too many keys; set `IdentitiesOnly yes` in `~/.ssh/config` |
+| No thumbnails, videos won't play | `ffmpeg` missing |
+| 500 on `/portal` after an update | service not restarted after `uv sync` |
 
 ## Use
 
