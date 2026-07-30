@@ -146,6 +146,19 @@ def test_report_is_surfaced_on_the_directory_page(client):
     assert "Looks fine." in resp.text
 
 
+def test_directory_listing_comes_before_report_and_media(client):
+    """Navigating deeper is the common action, so folders must not be pushed below
+    a long report or a large gallery."""
+    (client.pin.root / "rollout.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+
+    html = client.get(f"/b/{client.pin.id}").text
+    listing = html.index('<table class="listing"')
+    report = html.index("<h2>📝")
+    media = html.index("<h2>Media")
+
+    assert listing < report < media, "listing must render first, then report, then media"
+
+
 def test_csv_preview(client):
     resp = client.get(f"/b/{client.pin.id}/metrics.csv")
     assert resp.status_code == 200

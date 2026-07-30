@@ -28,32 +28,6 @@
   </a>
 </div>
 
-{% if report_html %}
-<div class="viewer prose" style="margin-bottom:18px">
-  <div class="sub mono" style="margin-bottom:10px">📝 {{ report.name }}</div>
-  {{ report_html | safe }}
-</div>
-{% endif %}
-
-{% if media %}
-<h2>Media <span class="sub">({{ media | length }})</span></h2>
-<div class="gallery">
-  {% for e in media %}
-  <div class="card">
-    <a class="wrap" href="/b/{{ pin.id }}/{{ e.rel }}">
-      <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="{{ e.name }}">
-      {% if e.kind == 'video' %}<span class="badge-play">▶ video</span>{% endif %}
-    </a>
-    <div class="cap">
-      <div class="mono">{{ e.name }}</div>
-      <div class="when">{{ e.age_h }} · {{ e.size_h }}</div>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<h2>All files</h2>
 {% if entries %}
 <div class="panel" style="padding:4px 8px">
 <table class="listing">
@@ -94,6 +68,33 @@
 </div>
 {% else %}
 <div class="empty">Empty directory.</div>
+{% endif %}
+
+{# Report and media sit BELOW the listing: navigating deeper is the common action,
+   and a long report or a 500-image gallery would otherwise bury the folders. #}
+{% if report_html %}
+<h2>📝 {{ report.name }}</h2>
+<div class="viewer prose">
+  {{ report_html | safe }}
+</div>
+{% endif %}
+
+{% if media %}
+<h2>Media <span class="sub">({{ media | length }})</span></h2>
+<div class="gallery">
+  {% for e in media %}
+  <div class="card">
+    <a class="wrap" href="/b/{{ pin.id }}/{{ e.rel }}">
+      <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="{{ e.name }}">
+      {% if e.kind == 'video' %}<span class="badge-play">▶ video</span>{% endif %}
+    </a>
+    <div class="cap">
+      <div class="mono">{{ e.name }}</div>
+      <div class="when">{{ e.age_h }} · {{ e.size_h }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 
 {% endblock %}
