@@ -16,11 +16,12 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import __version__, browse, config, media, render, tailnet
+from . import __version__, browse, config, media, organize, render, tailnet
 from .safety import AccessDenied, PinUnavailable, resolve
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 TEMPLATES.env.filters["human_size"] = browse.human_size
+TEMPLATES.env.filters["human_age"] = browse.human_age
 
 HOSTNAME = socket.gethostname()
 
@@ -54,14 +55,36 @@ def create_app(self_port: int = 8765) -> FastAPI:
 
     # ---- pins ------------------------------------------------------------------
 
+    # How many pins before a flat list stops being scannable and the tree wins.
+    TREE_THRESHOLD = 8
+
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request):
+    def index(request: Request, view: str = "", sort: str = "activity"):
         pins = config.load_pins()
         cache_bytes, cache_files = media.cache_usage()
+
+        # Adaptive default: a tree around three pins is just noise, but a flat list of
+        # two hundred is unusable. Explicit ?view= always wins.
+        if view not in ("flat", "tree", "tag"):
+            view = "tree" if len(pins) > TREE_THRESHOLD else "flat"
+
+        if sort == "title":
+            ordered = sorted(pins, key=lambda p: p.title.lower())
+        elif sort == "path":
+            ordered = sorted(pins, key=lambda p: p.path.lower())
+        else:
+            sort = "activity"
+            ordered = sorted(pins, key=lambda p: -p.activity)
+
         return _page(
             request,
             "index.html",
-            pins=pins,
+            pins=ordered,
+            view=view,
+            sort=sort,
+            tree=organize.pin_tree(pins),
+            tag_groups=organize.group_by_tag(pins),
+            missing=[p for p in pins if not p.exists],
             cache_size=browse.human_size(cache_bytes),
             cache_files=cache_files,
             have_ffmpeg=media.have_ffmpeg(),

@@ -19,14 +19,35 @@
   {% endfor %}
 </div>
 
-<div class="row" style="margin-bottom:14px">
+<div class="row" style="margin-bottom:10px">
   <h1 style="margin:0">{{ crumbs[-1][0] if crumbs else pin.title }}</h1>
   <span class="spacer"></span>
-  <span class="sub">{{ entries | length }} item{{ '' if entries|length == 1 else 's' }}</span>
+  <span class="sub" id="count">{{ entries | length }} item{{ '' if entries|length == 1 else 's' }}</span>
   <a class="btn ghost" href="?hidden={{ '0' if show_hidden else '1' }}">
     {{ 'Hide' if show_hidden else 'Show' }} dotfiles
   </a>
 </div>
+
+{% if entries %}
+<div class="toolbar">
+  <input type="search" id="f-name" placeholder="filter by name…" autocomplete="off" spellcheck="false">
+  <select id="f-time" title="filter by modification time">
+    <option value="0">any time</option>
+    <option value="3600">past hour</option>
+    <option value="86400">past 24 hours</option>
+    <option value="604800">past 7 days</option>
+    <option value="2592000">past 30 days</option>
+  </select>
+  <select id="f-size" title="filter by size — folders always pass">
+    <option value="0">any size</option>
+    <option value="1048576">&gt; 1 MB</option>
+    <option value="10485760">&gt; 10 MB</option>
+    <option value="104857600">&gt; 100 MB</option>
+    <option value="1073741824">&gt; 1 GB</option>
+  </select>
+  <button class="ghost" id="f-clear" type="button">Clear</button>
+</div>
+{% endif %}
 
 {% if entries %}
 <div class="panel" style="padding:4px 8px">
@@ -34,21 +55,22 @@
   <thead>
     <tr>
       <th class="thumb-cell"></th>
-      <th>Name</th>
-      <th class="num">Size</th>
-      <th class="num">Modified</th>
+      <th class="sortable" data-key="name">Name</th>
+      <th class="num sortable" data-key="size">Size</th>
+      <th class="num sortable" data-key="mtime">Modified</th>
     </tr>
   </thead>
   <tbody>
     {% if parent is not none and rel %}
-    <tr>
+    <tr class="updir">
       <td class="thumb-cell"><span class="icon">↰</span></td>
       <td><a href="/b/{{ pin.id }}{% if parent %}/{{ parent }}{% endif %}" class="mono">..</a></td>
       <td class="num"></td><td class="num"></td>
     </tr>
     {% endif %}
     {% for e in entries %}
-    <tr>
+    <tr data-name="{{ e.name | lower }}" data-size="{{ e.size }}"
+        data-mtime="{{ e.mtime | int }}" data-dir="{{ 1 if e.is_dir else 0 }}"
       <td class="thumb-cell">
         {% if e.thumbable %}
           <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="">
@@ -83,7 +105,8 @@
 <h2>Media <span class="sub">({{ media | length }})</span></h2>
 <div class="gallery">
   {% for e in media %}
-  <div class="card">
+  <div class="card" data-name="{{ e.name | lower }}" data-size="{{ e.size }}"
+       data-mtime="{{ e.mtime | int }}">
     <a class="wrap" href="/b/{{ pin.id }}/{{ e.rel }}">
       <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="{{ e.name }}">
       {% if e.kind == 'video' %}<span class="badge-play">▶ video</span>{% endif %}
@@ -96,5 +119,89 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<script>
+// Filtering and sorting run client-side so they respond per keystroke. The ".." row is
+// never filtered or reordered — it is navigation, not content.
+(function () {
+  const tbody = document.querySelector('table.listing tbody');
+  if (!tbody) return;
+
+  const fName = document.getElementById('f-name');
+  const fTime = document.getElementById('f-time');
+  const fSize = document.getElementById('f-size');
+  const count = document.getElementById('count');
+  const gallery = document.querySelector('.gallery');
+
+  const updir = tbody.querySelector('tr.updir');
+  const rows = Array.from(tbody.querySelectorAll('tr:not(.updir)'));
+  const cards = gallery ? Array.from(gallery.querySelectorAll('.card')) : [];
+  const total = rows.length;
+
+  // Default order from the server: directories first, then newest-first.
+  let key = null, dir = 1;
+
+  function matches(el) {
+    const q = fName.value.trim().toLowerCase();
+    if (q && !el.dataset.name.includes(q)) return false;
+
+    const within = +fTime.value;
+    if (within && (Date.now() / 1000 - +el.dataset.mtime) > within) return false;
+
+    // Folders have no meaningful size, so a size filter must not hide them —
+    // you still need them to navigate.
+    const min = +fSize.value;
+    if (min && el.dataset.dir !== '1' && +el.dataset.size < min) return false;
+
+    return true;
+  }
+
+  function apply() {
+    let shown = 0;
+    for (const row of rows) {
+      const hit = matches(row);
+      row.hidden = !hit;
+      if (hit) shown++;
+    }
+    for (const card of cards) card.hidden = !matches(card);
+
+    const filtered = shown !== total;
+    count.textContent = filtered
+      ? `${shown} of ${total} shown`
+      : `${total} item${total === 1 ? '' : 's'}`;
+  }
+
+  function sortBy(k) {
+    dir = key === k ? -dir : (k === 'name' ? 1 : -1);  // sizes and dates read best largest-first
+    key = k;
+
+    rows.sort((a, b) => {
+      // Keep directories grouped above files whatever the sort key.
+      if (a.dataset.dir !== b.dataset.dir) return b.dataset.dir - a.dataset.dir;
+      const av = k === 'name' ? a.dataset.name : +a.dataset[k];
+      const bv = k === 'name' ? b.dataset.name : +b.dataset[k];
+      return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+    });
+
+    for (const row of rows) tbody.appendChild(row);
+    if (updir) tbody.insertBefore(updir, tbody.firstChild);
+
+    for (const th of document.querySelectorAll('th.sortable')) {
+      th.dataset.dir = th.dataset.key === k ? (dir > 0 ? 'asc' : 'desc') : '';
+    }
+  }
+
+  for (const el of [fName, fTime, fSize]) el.addEventListener('input', apply);
+  document.getElementById('f-clear').addEventListener('click', () => {
+    fName.value = ''; fTime.value = '0'; fSize.value = '0'; apply(); fName.focus();
+  });
+  fName.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { fName.value = ''; apply(); }
+  });
+  for (const th of document.querySelectorAll('th.sortable')) {
+    th.addEventListener('click', () => sortBy(th.dataset.key));
+  }
+})();
+</script>
 
 {% endblock %}

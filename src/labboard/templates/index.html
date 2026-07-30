@@ -1,35 +1,117 @@
 {% extends "base.html" %}
 {% block title %}Pins{% endblock %}
+
+{# One pin card, reused by every view. #}
+{% macro pincard(pin) %}
+<div class="pin" data-search="{{ (pin.title ~ ' ' ~ pin.path ~ ' ' ~ pin.tags|join(' '))|lower }}">
+  <h3><a href="/b/{{ pin.id }}">{{ pin.title }}</a></h3>
+  <div class="path mono">{{ pin.path }}</div>
+  {% if not pin.exists %}<div class="gone">⚠ directory is missing or unreadable</div>{% endif %}
+  {% if pin.tags %}
+  <div class="tags">
+    {% for t in pin.tags %}<a class="tag" href="?view=tag#tag-{{ t }}">{{ t }}</a>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="row" style="margin-top:auto;padding-top:8px">
+    <span class="sub" title="most recent change in this directory">
+      {% if pin.activity %}{{ pin.activity | human_age }}{% else %}—{% endif %}
+    </span>
+    <span class="spacer"></span>
+    <form method="post" action="/pins/{{ pin.id }}/delete"
+          onsubmit="return confirm('Unpin {{ pin.title }}?\n\nThis only removes the bookmark. Nothing on disk is touched.')">
+      <button class="ghost" type="submit">Unpin</button>
+    </form>
+  </div>
+</div>
+{% endmacro %}
+
+{# Recursive: a path-prefix group and everything beneath it.
+
+   A child that holds one pin and nothing else is rendered as a card right here rather
+   than as its own collapsible group — the group would just wrap a single card and
+   repeat the directory name the card already shows. #}
+{% macro treenode(node, depth) %}
+{% set branches = node.children | selectattr('children') | list %}
+{% set cards = node.pins + (node.children | rejectattr('children') | map(attribute='pins') | sum(start=[])) %}
+<details class="group" {% if depth < 1 or node.pin_count <= 12 %}open{% endif %}>
+  <summary>
+    <span class="mono glabel">{{ node.label }}</span>
+    <span class="gcount">{{ node.pin_count }}</span>
+  </summary>
+  <div class="gbody">
+    {% if cards %}
+    <div class="pin-grid">{% for pin in cards %}{{ pincard(pin) }}{% endfor %}</div>
+    {% endif %}
+    {% for child in branches %}{{ treenode(child, depth + 1) }}{% endfor %}
+  </div>
+</details>
+{% endmacro %}
+
 {% block content %}
 
-<h1>Pinned directories</h1>
+<div class="row" style="margin-bottom:4px">
+  <h1 style="margin:0">Pinned directories</h1>
+  <span class="spacer"></span>
+  <span class="sub">{{ pins | length }} pin{{ '' if pins|length == 1 else 's' }}</span>
+</div>
 <p class="sub">
   On <span class="mono">{{ hostname }}</span>. A pin is also the access boundary —
   only paths beneath one of these can be read.
 </p>
 
 {% if pins %}
-<div class="pin-grid" style="margin-top:16px">
-  {% for pin in pins %}
-  <div class="pin">
-    <h3><a href="/b/{{ pin.id }}">{{ pin.title }}</a></h3>
-    <div class="path mono">{{ pin.path }}</div>
-    {% if not pin.exists %}<div class="gone">⚠ directory is missing or unreadable</div>{% endif %}
-    {% if pin.tags %}
-    <div class="tags">{% for t in pin.tags %}<span class="tag">{{ t }}</span>{% endfor %}</div>
-    {% endif %}
-    {% if pin.note %}<div class="sub">{{ pin.note }}</div>{% endif %}
-    <div class="row" style="margin-top:auto;padding-top:8px">
-      <span class="sub">{{ pin.added[:10] }}</span>
-      <span class="spacer"></span>
-      <form method="post" action="/pins/{{ pin.id }}/delete"
-            onsubmit="return confirm('Unpin {{ pin.title }}?\n\nThis only removes the bookmark. Nothing on disk is touched.')">
-        <button class="ghost" type="submit">Unpin</button>
-      </form>
-    </div>
-  </div>
-  {% endfor %}
+<div class="toolbar">
+  <input type="search" id="pinsearch" placeholder="filter pins by name, path or tag…"
+         autocomplete="off" spellcheck="false">
+  <span class="seg">
+    <a class="{{ 'on' if view == 'flat' }}" href="?view=flat&sort={{ sort }}">List</a>
+    <a class="{{ 'on' if view == 'tree' }}" href="?view=tree">Tree</a>
+    <a class="{{ 'on' if view == 'tag' }}" href="?view=tag">Tags</a>
+  </span>
+  {% if view == 'flat' %}
+  <span class="seg">
+    <a class="{{ 'on' if sort == 'activity' }}" href="?view=flat&sort=activity">Recent</a>
+    <a class="{{ 'on' if sort == 'title' }}" href="?view=flat&sort=title">Name</a>
+    <a class="{{ 'on' if sort == 'path' }}" href="?view=flat&sort=path">Path</a>
+  </span>
+  {% endif %}
+  <span class="spacer"></span>
+  <span class="sub" id="pincount"></span>
 </div>
+
+{% if missing %}
+<div class="note warn" style="margin-bottom:14px">
+  {{ missing | length }} pin{{ '' if missing|length == 1 else 's' }} point at a directory that no
+  longer exists. They stay listed rather than vanishing, so you can decide whether the results
+  moved or the pin is stale.
+</div>
+{% endif %}
+
+<div id="pinroot">
+{% if view == 'tree' %}
+  {% set top_cards = tree | rejectattr('children') | map(attribute='pins') | sum(start=[]) %}
+  {% if top_cards %}
+  <div class="pin-grid" style="margin-bottom:10px">
+    {% for pin in top_cards %}{{ pincard(pin) }}{% endfor %}
+  </div>
+  {% endif %}
+  {% for node in tree | selectattr('children') %}{{ treenode(node, 0) }}{% endfor %}
+
+{% elif view == 'tag' %}
+  {% for tag, group in tag_groups %}
+  <details class="group" id="tag-{{ tag }}" open>
+    <summary><span class="glabel">{{ tag }}</span><span class="gcount">{{ group | length }}</span></summary>
+    <div class="gbody">
+      <div class="pin-grid">{% for pin in group %}{{ pincard(pin) }}{% endfor %}</div>
+    </div>
+  </details>
+  {% endfor %}
+
+{% else %}
+  <div class="pin-grid">{% for pin in pins %}{{ pincard(pin) }}{% endfor %}</div>
+{% endif %}
+</div>
+
 {% else %}
 <div class="empty">
   <p>No pins yet.</p>
@@ -63,5 +145,35 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+// Pin search: hides non-matching cards, then any group left with nothing in it.
+(function () {
+  const box = document.getElementById('pinsearch');
+  if (!box) return;
+  const root = document.getElementById('pinroot');
+  const count = document.getElementById('pincount');
+  const cards = Array.from(root.querySelectorAll('.pin'));
+
+  function apply() {
+    const q = box.value.trim().toLowerCase();
+    let shown = 0;
+    for (const card of cards) {
+      const hit = !q || card.dataset.search.includes(q);
+      card.hidden = !hit;
+      if (hit) shown++;
+    }
+    for (const group of root.querySelectorAll('details.group')) {
+      const any = group.querySelector('.pin:not([hidden])');
+      group.hidden = !any;
+      if (q && any) group.open = true;   // reveal matches buried in collapsed groups
+    }
+    count.textContent = q ? `${shown} of ${cards.length} shown` : '';
+  }
+
+  box.addEventListener('input', apply);
+  box.addEventListener('keydown', e => { if (e.key === 'Escape') { box.value = ''; apply(); } });
+})();
+</script>
 
 {% endblock %}

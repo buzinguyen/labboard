@@ -101,6 +101,52 @@ table.listing .num { text-align:right; color:var(--muted); font-size:13px; white
 }
 .card .wrap { position:relative; display:block; }
 
+/* toolbar: filters, view switch */
+.toolbar {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:14px;
+  padding:9px 11px; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius);
+}
+.toolbar input[type=search] { flex:1 1 220px; }
+.toolbar select {
+  background:var(--bg); color:var(--fg); border:1px solid var(--line);
+  border-radius:7px; padding:7px 8px; font:inherit; font-size:13px;
+}
+.seg { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.seg a {
+  padding:6px 11px; font-size:13px; color:var(--muted); border-right:1px solid var(--line);
+}
+.seg a:last-child { border-right:0; }
+.seg a:hover { background:var(--bg); text-decoration:none; }
+.seg a.on { background:var(--accent); color:var(--bg); font-weight:550; }
+
+/* sortable columns */
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:var(--fg); }
+th.sortable::after { content:''; opacity:.45; margin-left:4px; }
+th.sortable[data-dir=asc]::after  { content:'▲'; opacity:.85; }
+th.sortable[data-dir=desc]::after { content:'▼'; opacity:.85; }
+
+/* nested pin groups */
+details.group { margin-bottom:10px; }
+details.group > summary {
+  display:flex; align-items:center; gap:9px; cursor:pointer; list-style:none;
+  padding:7px 11px; background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); font-size:13px;
+}
+details.group > summary::-webkit-details-marker { display:none; }
+details.group > summary::before { content:'▸'; color:var(--muted); font-size:11px; }
+details.group[open] > summary::before { content:'▾'; }
+details.group > summary:hover { border-color:var(--accent); }
+.glabel { color:var(--muted); word-break:break-all; }
+.gcount {
+  margin-left:auto; font-size:11px; color:var(--accent); background:var(--accent-soft);
+  padding:1px 8px; border-radius:99px; flex:none;
+}
+.gbody { padding:10px 0 4px 18px; border-left:1px solid var(--line); margin-left:13px; }
+.gbody > details.group:last-child { margin-bottom:0; }
+a.tag:hover { text-decoration:none; filter:brightness(1.1); }
+
 /* forms + buttons */
 input[type=text], input[type=search] {
   background:var(--bg); color:var(--fg); border:1px solid var(--line);

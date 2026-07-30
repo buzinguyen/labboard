@@ -63,6 +63,18 @@ class Pin:
             # Unreachable NFS mount, permission denied on a parent, etc.
             return False
 
+    @property
+    def activity(self) -> float:
+        """mtime of the pinned directory — a cheap proxy for "a run landed here".
+
+        A directory's mtime changes when entries are added or removed, so this
+        surfaces the pin a new run just wrote into. O(1), unlike walking the tree.
+        """
+        try:
+            return self.root.stat().st_mtime
+        except OSError:
+            return 0.0
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
