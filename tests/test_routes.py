@@ -128,8 +128,13 @@ def test_no_write_routes_exist(client):
         for method in getattr(route, "methods", set())
         if method == "POST"
     }
-    # The only POSTs manage pins (config entries), never file content.
-    assert posts == {"/pins", "/pins/{pin_id}/delete"}
+    # The only POSTs manage pins (entries in a config file), never file content.
+    assert posts == {
+        "/pins",
+        "/pins/{pin_id}/archive",
+        "/pins/{pin_id}/restore",
+        "/pins/{pin_id}/delete",
+    }
 
 
 # --- viewers -------------------------------------------------------------------

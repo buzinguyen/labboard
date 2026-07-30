@@ -97,14 +97,55 @@ cd ~/labboard && git pull && uv sync && systemctl --user restart labboard
 
 ```bash
 labboard pin add ~/runs/go2_tunnel_ra/2026-07-30_11-02-14 --title "go2 tunnel RA" --tags mjlab,go2
-labboard pin list
-labboard pin rm <id|path>
-labboard cache            # how much derived data has accumulated
-labboard cache --clear
+labboard pin list [--all]     # --all includes archived
+labboard pin archive <id|path>   # hide it, reversibly — the usual way to tidy up
+labboard pin restore <id|path>
+labboard pin rm <id|path>        # permanent; prefer archive
+labboard scan <dir>...           # register pins declared in labboard.toml manifests
+labboard cache [--clear]         # how much derived data has accumulated
 ```
 
 Then open `https://<node>.tail8b90f5.ts.net` for that machine, or `/portal` on any node
 for everything at once.
+
+### Finding things once there are many pins
+
+The Pins page offers three views. **Tree** groups pins by their longest shared path
+prefix, collapsing single-child chains, so `~/proj/logs/run1` and `~/proj/logs/run2` sit
+together under one `~/proj/logs` group. **Tags** groups by tag. **List** is flat, sorted
+by recent activity, name, or path. A search box filters title, path and tags at once, and
+opens whichever collapsed groups contain matches. The default is tree above eight pins.
+
+A **Recent activity** section sits at the top: pins whose directory changed in the last 24
+hours. With a large board this is usually the only part you need.
+
+Inside a directory, the listing filters by name, modification time and size, and the
+columns sort. Size filters never hide folders — navigation is the reason you are there.
+
+### Declaring pins in the repo
+
+Rather than remembering to pin each project, drop a `labboard.toml` at its root:
+
+```toml
+title = "safe_mjlab_zoo"        # optional prefix for every pin from this file
+tags  = ["mjlab", "safety"]     # optional defaults, merged into each pin
+
+pins = ["logs/rsl_rl"]          # shorthand
+
+[[pin]]                          # or the long form
+path  = "outputs/eval"
+title = "eval sweeps"
+tags  = ["go2"]
+```
+
+Then `labboard scan ~/projects` registers everything declared beneath that root. Paths are
+relative to the manifest and may not escape its directory. The search skips `.git`,
+`wandb`, `checkpoints`, `node_modules` and friends, stops at four levels deep by default
+(`--depth`), and does not descend past a manifest it has already found. A broken manifest
+is reported and skipped, never fatal to the scan. `--dry-run` shows what would happen.
+
+Scanning is idempotent and deliberately **will not un-archive** a pin you archived — only
+an explicit `pin add` does that.
 
 ### For agents
 

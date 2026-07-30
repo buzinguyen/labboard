@@ -10,6 +10,7 @@ mutating endpoints manage pins, which are entries in a local config file.
 from __future__ import annotations
 
 import socket
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -57,11 +58,22 @@ def create_app(self_port: int = 8765) -> FastAPI:
 
     # How many pins before a flat list stops being scannable and the tree wins.
     TREE_THRESHOLD = 8
+    # A pin whose directory changed within this window counts as "recent".
+    RECENT_WINDOW = 24 * 3600
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, view: str = "", sort: str = "activity"):
-        pins = config.load_pins()
+        every = config.load_pins()
+        pins = [p for p in every if not p.archived]
+        archived = [p for p in every if p.archived]
         cache_bytes, cache_files = media.cache_usage()
+
+        # "What changed since yesterday" is the question a big pin list is bad at
+        # answering, so answer it up front.
+        cutoff = time.time() - RECENT_WINDOW
+        recent = sorted(
+            (p for p in pins if p.activity >= cutoff), key=lambda p: -p.activity
+        )
 
         # Adaptive default: a tree around three pins is just noise, but a flat list of
         # two hundred is unusable. Explicit ?view= always wins.
@@ -82,6 +94,8 @@ def create_app(self_port: int = 8765) -> FastAPI:
             pins=ordered,
             view=view,
             sort=sort,
+            recent=recent,
+            archived=sorted(archived, key=lambda p: p.title.lower()),
             tree=organize.pin_tree(pins),
             tag_groups=organize.group_by_tag(pins),
             missing=[p for p in pins if not p.exists],
@@ -102,8 +116,20 @@ def create_app(self_port: int = 8765) -> FastAPI:
             raise HTTPException(400, str(exc))
         return RedirectResponse(f"/b/{pin.id}", status_code=303)
 
+    @app.post("/pins/{pin_id}/archive")
+    def archive_pin(pin_id: str):
+        """Hide a pin without losing it — the reversible default in the UI."""
+        config.set_archived(pin_id, True)
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/pins/{pin_id}/restore")
+    def restore_pin(pin_id: str):
+        config.set_archived(pin_id, False)
+        return RedirectResponse("/", status_code=303)
+
     @app.post("/pins/{pin_id}/delete")
     def delete_pin(pin_id: str):
+        """Permanent. Only offered from the Archived section."""
         config.remove_pin(pin_id)
         return RedirectResponse("/", status_code=303)
 

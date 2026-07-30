@@ -17,9 +17,10 @@
       {% if pin.activity %}{{ pin.activity | human_age }}{% else %}—{% endif %}
     </span>
     <span class="spacer"></span>
-    <form method="post" action="/pins/{{ pin.id }}/delete"
-          onsubmit="return confirm('Unpin {{ pin.title }}?\n\nThis only removes the bookmark. Nothing on disk is touched.')">
-      <button class="ghost" type="submit">Unpin</button>
+    {# Archive, not delete: reversible, and the entry survives. Permanent removal
+       lives in the Archived section, one step further away. #}
+    <form method="post" action="/pins/{{ pin.id }}/archive">
+      <button class="ghost" type="submit" title="Hide this pin. Nothing on disk is touched, and you can restore it below.">Archive</button>
     </form>
   </div>
 </div>
@@ -87,6 +88,18 @@
 </div>
 {% endif %}
 
+{% if recent %}
+<details class="group recent" open>
+  <summary>
+    <span class="glabel"><strong>Recent activity</strong> · past 24 hours</span>
+    <span class="gcount">{{ recent | length }}</span>
+  </summary>
+  <div class="gbody">
+    <div class="pin-grid">{% for pin in recent %}{{ pincard(pin) }}{% endfor %}</div>
+  </div>
+</details>
+{% endif %}
+
 <div id="pinroot">
 {% if view == 'tree' %}
   {% set top_cards = tree | rejectattr('children') | map(attribute='pins') | sum(start=[]) %}
@@ -118,6 +131,40 @@
   <p class="sub">Add one below, or let an agent register a directory:<br>
   <code>labboard pin add /path/to/run --title "..."</code></p>
 </div>
+{% endif %}
+
+{% if archived %}
+<details class="group" style="margin-top:22px">
+  <summary>
+    <span class="glabel">Archived</span>
+    <span class="gcount">{{ archived | length }}</span>
+  </summary>
+  <div class="gbody">
+    <p class="sub" style="margin-top:0">
+      Hidden from every view, but still registered — and still readable, since a pin is
+      the access scope. Restore to bring one back, or remove it permanently.
+    </p>
+    <div class="pin-grid">
+      {% for pin in archived %}
+      <div class="pin">
+        <h3><a href="/b/{{ pin.id }}">{{ pin.title }}</a></h3>
+        <div class="path mono">{{ pin.path }}</div>
+        {% if not pin.exists %}<div class="gone">⚠ directory is missing or unreadable</div>{% endif %}
+        <div class="row" style="margin-top:auto;padding-top:8px;gap:6px">
+          <form method="post" action="/pins/{{ pin.id }}/restore">
+            <button type="submit">Restore</button>
+          </form>
+          <span class="spacer"></span>
+          <form method="post" action="/pins/{{ pin.id }}/delete"
+                onsubmit="return confirm('Permanently remove the pin &quot;{{ pin.title }}&quot;?\n\nThis cannot be undone. The directory itself is not touched.')">
+            <button class="ghost danger" type="submit">Remove</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</details>
 {% endif %}
 
 <h2>Add a pin</h2>

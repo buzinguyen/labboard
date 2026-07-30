@@ -45,6 +45,7 @@ class Pin:
     tags: list[str] = field(default_factory=list)
     note: str = ""
     added: str = ""
+    archived: bool = False
 
     @property
     def root(self) -> Path:
@@ -83,6 +84,7 @@ class Pin:
             "tags": self.tags,
             "note": self.note,
             "added": self.added,
+            "archived": self.archived,
         }
 
 
@@ -103,12 +105,18 @@ def load_pins() -> list[Pin]:
                     tags=list(raw.get("tags", [])),
                     note=raw.get("note", ""),
                     added=raw.get("added", ""),
+                    archived=bool(raw.get("archived", False)),
                 )
             )
         except KeyError:
             # A malformed entry must not take the whole board down.
             continue
     return pins
+
+
+def active_pins() -> list[Pin]:
+    """Pins that should appear in the board. Archived ones are kept but hidden."""
+    return [p for p in load_pins() if not p.archived]
 
 
 def save_pins(pins: list[Pin]) -> None:
@@ -125,8 +133,20 @@ def get_pin(pin_id: str) -> Pin | None:
     return next((p for p in load_pins() if p.id == pin_id), None)
 
 
-def add_pin(path: Path, title: str = "", tags: list[str] | None = None, note: str = "") -> Pin:
-    """Register a directory. Idempotent — re-adding an existing path updates it in place."""
+def add_pin(
+    path: Path,
+    title: str = "",
+    tags: list[str] | None = None,
+    note: str = "",
+    unarchive: bool = True,
+) -> Pin:
+    """Register a directory. Idempotent — re-adding an existing path updates it in place.
+
+    `unarchive` decides what re-adding an archived pin means. A person typing
+    `pin add` clearly wants it back, so that defaults to True; automated callers
+    (`scan`) pass False, otherwise every scan would resurrect pins you archived
+    on purpose.
+    """
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_dir():
         raise NotADirectoryError(f"not a directory: {resolved}")
@@ -143,6 +163,7 @@ def add_pin(path: Path, title: str = "", tags: list[str] | None = None, note: st
     for i, existing in enumerate(pins):
         if existing.id == pin.id:
             pin.added = existing.added or pin.added  # keep the original registration time
+            pin.archived = False if unarchive else existing.archived
             pins[i] = pin
             break
     else:
@@ -151,7 +172,19 @@ def add_pin(path: Path, title: str = "", tags: list[str] | None = None, note: st
     return pin
 
 
+def set_archived(pin_id: str, archived: bool) -> bool:
+    """Hide (or restore) a pin without touching the directory or losing the entry."""
+    pins = load_pins()
+    for pin in pins:
+        if pin.id == pin_id:
+            pin.archived = archived
+            save_pins(pins)
+            return True
+    return False
+
+
 def remove_pin(pin_id: str) -> bool:
+    """Delete the entry outright. Archiving is the reversible option."""
     pins = load_pins()
     kept = [p for p in pins if p.id != pin_id]
     if len(kept) == len(pins):
