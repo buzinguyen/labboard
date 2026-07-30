@@ -34,6 +34,16 @@ mkdir -p "$UNIT_DIR"
 sed -e "s|@REPO@|$REPO|g" -e "s|@PORT@|$PORT|g" \
     "$REPO/systemd/labboard.service.in" > "$UNIT"
 
+# Agents are instructed (via the global CLAUDE.md) to call `labboard pin add`, so the
+# command has to resolve without knowing where the repo was cloned.
+say "Linking labboard into ~/.local/bin"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$REPO/.venv/bin/labboard" "$HOME/.local/bin/labboard"
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) warn "~/.local/bin is not on PATH — add it so \`labboard\` resolves in new shells." ;;
+esac
+
 say "Enabling service"
 systemctl --user daemon-reload
 systemctl --user enable --now labboard.service
