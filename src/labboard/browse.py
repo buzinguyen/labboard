@@ -95,7 +95,9 @@ class Entry:
 
     @property
     def size_h(self) -> str:
-        return "" if self.is_dir else human_size(self.size)
+        # A directory has no meaningful size. An em-dash reads as "not applicable";
+        # an empty cell just looks like the column failed to render.
+        return "—" if self.is_dir else human_size(self.size)
 
     @property
     def age_h(self) -> str:

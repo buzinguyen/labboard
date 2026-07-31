@@ -12,7 +12,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from labboard import config
+from labboard import browse, config
 from labboard.app import create_app
 
 
@@ -149,6 +149,76 @@ def test_markdown_report_renders_and_rewrites_relative_images(client):
 def test_report_is_surfaced_on_the_directory_page(client):
     resp = client.get(f"/b/{client.pin.id}")
     assert "Looks fine." in resp.text
+
+
+def test_listing_rows_are_well_formed(client):
+    """Every row must have exactly as many cells as the header.
+
+    Guards a real bug: a `<tr ...` left without its closing `>` makes the browser
+    swallow the first `<td>` as row attributes, and the whole table renders wrong.
+    Directories are the visible symptom, since their Size cell is the odd one out.
+    """
+    from html.parser import HTMLParser
+
+    (client.pin.root / "subdir").mkdir()
+
+    class Table(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_table = self.in_row = False
+            self.rows: list[int] = []
+            self.headers = 0
+            self.bad_attrs: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            names = {a for a, _ in attrs}
+            if tag == "table" and dict(attrs).get("class") == "listing":
+                self.in_table = True
+            elif not self.in_table:
+                return
+            elif tag == "tr":
+                self.in_row = True
+                self.rows.append(0)
+                # A swallowed `<td>` shows up as bogus attributes on the row.
+                self.bad_attrs += [n for n in names if n.startswith(("<", "td"))]
+            elif tag in ("td", "th") and self.in_row:
+                if tag == "th":
+                    self.headers += 1
+                else:
+                    self.rows[-1] += 1
+
+        def handle_endtag(self, tag):
+            if tag == "tr":
+                self.in_row = False
+            elif tag == "table":
+                self.in_table = False
+
+    # Both the pin root and a subdirectory — the latter also carries the ".." nav row.
+    for url in (f"/b/{client.pin.id}", f"/b/{client.pin.id}/figs"):
+        parser = Table()
+        parser.feed(client.get(url).text)
+
+        assert parser.bad_attrs == [], f"{url}: row absorbed a cell: {parser.bad_attrs}"
+        assert parser.headers == 4, url
+        body_rows = [n for n in parser.rows if n]
+        assert body_rows, f"{url}: expected at least one data row"
+        assert all(n == 4 for n in body_rows), f"{url}: ragged rows {parser.rows}"
+
+
+def test_empty_directory_still_offers_a_way_back_up(client):
+    """The ".." row lives in the table, which an empty directory does not render."""
+    (client.pin.root / "figs" / "nested").mkdir()
+
+    html = client.get(f"/b/{client.pin.id}/figs/nested").text
+    assert "Empty directory" in html
+    assert f'href="/b/{client.pin.id}/figs"' in html
+
+
+def test_directory_shows_a_placeholder_instead_of_a_blank_size(client):
+    (client.pin.root / "subdir").mkdir()
+    entries = {e.name: e for e in browse.list_dir(client.pin.root, client.pin.root)}
+    assert entries["subdir"].size_h == "—"
+    assert entries["metrics.csv"].size_h.endswith("B")
 
 
 def test_directory_listing_comes_before_report_and_media(client):

@@ -70,7 +70,7 @@
     {% endif %}
     {% for e in entries %}
     <tr data-name="{{ e.name | lower }}" data-size="{{ e.size }}"
-        data-mtime="{{ e.mtime | int }}" data-dir="{{ 1 if e.is_dir else 0 }}"
+        data-mtime="{{ e.mtime | int }}" data-dir="{{ 1 if e.is_dir else 0 }}">
       <td class="thumb-cell">
         {% if e.thumbable %}
           <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="">
@@ -89,7 +89,14 @@
 </table>
 </div>
 {% else %}
-<div class="empty">Empty directory.</div>
+<div class="empty">
+  <p>Empty directory.</p>
+  {% if rel %}
+  {# The ".." row lives in the table, so without this there is no way back up
+     from an empty directory except the breadcrumbs. #}
+  <p><a class="btn ghost" href="/b/{{ pin.id }}{% if parent %}/{{ parent }}{% endif %}">↰ Up one level</a></p>
+  {% endif %}
+</div>
 {% endif %}
 
 {# Report and media sit BELOW the listing: navigating deeper is the common action,
