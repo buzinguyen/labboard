@@ -146,6 +146,81 @@ def list_dir(root: Path, target: Path, show_hidden: bool = False) -> list[Entry]
     return entries
 
 
+# Bounds for the nested-media walk. A run tree can hold thousands of frames; the panel
+# is for jumping to results, not for enumerating every PNG.
+NESTED_LIMIT = 400
+NESTED_DEPTH = 8
+
+# Directories with no plausible media, skipped to keep the walk cheap. `wandb` is
+# deliberately absent — wandb/run-*/files/media/videos is exactly where eval clips live.
+NESTED_SKIP = frozenset({"node_modules", "__pycache__", ".venv", "venv", "site-packages"})
+
+
+def find_nested_media(
+    root: Path, start: Path, limit: int = NESTED_LIMIT, max_depth: int = NESTED_DEPTH
+) -> tuple[list[Entry], bool]:
+    """Image/video files *below* `start`, newest first.
+
+    Files directly in `start` are excluded — those already render in the page's own
+    gallery, and the point of this panel is reaching media buried further down.
+
+    Returns (entries, truncated). Symlinked directories are not followed, and any file
+    resolving outside the pin is dropped, so this cannot walk out of the pinned tree.
+    """
+    found: list[Entry] = []
+    truncated = False
+    start_depth = len(start.parts)
+
+    for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
+        here = Path(dirpath)
+        depth = len(here.parts) - start_depth
+
+        if depth >= max_depth:
+            dirnames[:] = []
+        else:
+            dirnames[:] = sorted(
+                d for d in dirnames
+                if not d.startswith(".") and d not in NESTED_SKIP and not is_denied(d)
+            )
+
+        if here == start:
+            continue  # handled by the current directory's own gallery
+
+        for name in filenames:
+            if name.startswith(".") or is_denied(name):
+                continue
+            path = here / name
+            if classify(path) not in ("image", "video"):
+                continue
+            try:
+                # A symlinked file could point outside the pin; drop it rather than
+                # advertise something /raw would refuse to serve.
+                if not path.resolve().is_relative_to(root):
+                    continue
+                st = path.stat()
+            except OSError:
+                continue
+
+            found.append(
+                Entry(
+                    name=name,
+                    rel=str(path.relative_to(root)),
+                    is_dir=False,
+                    kind=classify(path),
+                    size=st.st_size,
+                    mtime=st.st_mtime,
+                )
+            )
+            if len(found) >= limit:
+                truncated = True
+                break
+        if truncated:
+            break
+
+    found.sort(key=lambda e: -e.mtime)
+    return found, truncated
+
+
 def find_report(entries: list[Entry]) -> Entry | None:
     """The markdown file to render at the top of a directory, if any."""
     by_name = {e.name.lower(): e for e in entries if not e.is_dir}

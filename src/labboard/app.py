@@ -220,6 +220,28 @@ def create_app(self_port: int = 8765) -> FastAPI:
             content_disposition_type="attachment" if download else "inline",
         )
 
+    @app.get("/nested-media/{pin_id}", response_class=HTMLResponse)
+    @app.get("/nested-media/{pin_id}/{rel:path}", response_class=HTMLResponse)
+    def nested_media(request: Request, pin_id: str, rel: str = ""):
+        """Fragment listing media buried below this directory.
+
+        Served separately and fetched after page load: walking a deep run tree can take
+        a moment, and the directory listing must not wait on it.
+        """
+        pin, target = _target(pin_id, rel)
+        if not target.is_dir():
+            raise HTTPException(404, "not a directory")
+
+        entries, truncated = browse.find_nested_media(pin.root, target)
+        return _page(
+            request,
+            "_nested_media.html",
+            pin=pin,
+            entries=entries,
+            truncated=truncated,
+            limit=browse.NESTED_LIMIT,
+        )
+
     @app.get("/thumb/{pin_id}/{rel:path}")
     async def thumb(pin_id: str, rel: str):
         _, target = _target(pin_id, rel)

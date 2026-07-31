@@ -122,6 +122,14 @@ hours. With a large board this is usually the only part you need.
 Inside a directory, the listing filters by name, modification time and size, and the
 columns sort. Size filters never hide folders — navigation is the reason you are there.
 
+A directory whose media is buried further down — weights and configs at the top, eval
+videos three levels in — shows an **In subfolders** panel beside the listing, linking
+straight to every image and video below that point, newest first. It searches `wandb/`
+too, since `wandb/run-*/files/media` is where eval clips usually land. The panel loads
+after the page so a deep tree never delays the listing, hides itself when there is
+nothing nested, and is bounded (400 files, 8 levels) so a directory of frame dumps
+cannot stall it.
+
 ### Declaring pins in the repo
 
 Rather than remembering to pin each project, drop a `labboard.toml` at its root:

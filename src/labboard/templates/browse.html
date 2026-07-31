@@ -49,6 +49,9 @@
 </div>
 {% endif %}
 
+<div class="split">
+<div class="split-main">
+
 {% if entries %}
 <div class="panel" style="padding:4px 8px">
 <table class="listing">
@@ -126,6 +129,32 @@
   {% endfor %}
 </div>
 {% endif %}
+
+</div>{# /split-main #}
+
+{# Media buried deeper in the tree. Populated after load; hides itself if empty. #}
+<aside class="split-side" id="nested" hidden
+       data-src="/nested-media/{{ pin.id }}{% if rel %}/{{ rel }}{% endif %}"></aside>
+</div>{# /split #}
+
+<script>
+// The walk can be slow on a deep tree, so the listing renders first and this fills in.
+(function () {
+  const side = document.getElementById('nested');
+  if (!side) return;
+  fetch(side.dataset.src, { headers: { 'X-Requested-With': 'fetch' } })
+    .then(r => (r.ok ? r.text() : ''))
+    .then(html => {
+      if (!html) return;
+      side.innerHTML = html;
+      const box = side.querySelector('[data-count]');
+      // Nothing nested — leave the page as a single column rather than showing
+      // an empty panel.
+      if (box && +box.dataset.count > 0) side.hidden = false;
+    })
+    .catch(() => {});
+})();
+</script>
 
 <script>
 // Filtering and sorting run client-side so they respond per keystroke. The ".." row is

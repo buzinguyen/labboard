@@ -1,0 +1,29 @@
+{# Fragment: media found below the current directory. Fetched after page load.
+   data-count lets the sidebar hide itself entirely when there is nothing to show. #}
+<div data-count="{{ entries | length }}">
+{% if entries %}
+  <div class="side-head">
+    <strong>In subfolders</strong>
+    <span class="gcount">{{ entries | length }}{{ '+' if truncated }}</span>
+  </div>
+
+  {% if truncated %}
+  <div class="sub side-note">
+    Showing the {{ limit }} most recent. Open a subfolder to see the rest.
+  </div>
+  {% endif %}
+
+  <div class="side-list">
+    {% for e in entries %}
+    <a class="side-item" href="/b/{{ pin.id }}/{{ e.rel }}" title="{{ e.rel }}">
+      <img loading="lazy" src="/thumb/{{ pin.id }}/{{ e.rel }}" alt="">
+      <span class="side-meta">
+        <span class="side-name mono">{{ e.name }}</span>
+        <span class="side-dir mono">{{ e.rel.rsplit('/', 1)[0] if '/' in e.rel else '.' }}</span>
+        <span class="side-when">{{ e.age_h }}{% if e.kind == 'video' %} · ▶{% endif %}</span>
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+{% endif %}
+</div>
