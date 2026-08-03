@@ -34,10 +34,21 @@ class Node:
     reachable: bool = False
     error: str = ""
     pins: list[dict] = field(default_factory=list)
+    projects: list[dict] = field(default_factory=list)
 
     @property
     def base_url(self) -> str:
         return f"https://{self.dns}"
+
+    def url(self, path: str) -> str:
+        """A link to `path` on this node.
+
+        Relative for ourselves — a link to our own machine always works, and does not
+        depend on knowing our own DNS name or having a certificate. Absolute for peers,
+        because the browser must go straight to the machine holding the data rather
+        than routing bytes through this one.
+        """
+        return path if self.is_self else f"{self.base_url}{path}"
 
 
 def _clean_dns(raw: str, fallback: str) -> str:
@@ -90,7 +101,24 @@ def discover() -> list[Node]:
     return nodes
 
 
-async def _fetch(client: httpx.AsyncClient, node: Node, self_port: int) -> Node:
+def _apply(node: Node, payload: dict) -> Node:
+    node.pins = payload.get("pins", [])
+    # Absent on nodes still running a pre-tickets build — an old peer degrades
+    # to "no projects", never to an error.
+    node.projects = payload.get("projects", [])
+    node.reachable = True
+    return node
+
+
+async def _fetch(
+    client: httpx.AsyncClient, node: Node, self_port: int, local: dict | None = None
+) -> Node:
+    # Answer for ourselves in-process. Going out over HTTP to our own port would make
+    # the dashboard depend on the service being reachable at a guessed port — which is
+    # exactly what breaks under `--reload`, under a non-default port, and in tests.
+    if node.is_self and local is not None:
+        return _apply(node, local)
+
     if not node.online and not node.is_self:
         node.error = "offline"
         return node
@@ -100,9 +128,7 @@ async def _fetch(client: httpx.AsyncClient, node: Node, self_port: int) -> Node:
     try:
         resp = await client.get(url, timeout=PEER_TIMEOUT)
         if resp.status_code == 200:
-            payload = resp.json()
-            node.pins = payload.get("pins", [])
-            node.reachable = True
+            _apply(node, resp.json())
         else:
             node.error = f"HTTP {resp.status_code}"
     except httpx.TimeoutException:
@@ -112,10 +138,24 @@ async def _fetch(client: httpx.AsyncClient, node: Node, self_port: int) -> Node:
     return node
 
 
-async def gather(self_port: int = 8765) -> list[Node]:
-    """Query every node concurrently. Failures degrade to an 'offline' badge."""
+async def gather(self_port: int = 8765, local: dict | None = None) -> list[Node]:
+    """Query every node concurrently. Failures degrade to an 'offline' badge.
+
+    `local` is this node's own `/api/node` payload. Passing it keeps the machine you
+    are looking at present in the results even with tailscale down or absent — your own
+    projects should never vanish because the tailnet is unreachable.
+    """
     nodes = discover()
     if not nodes:
-        return []
+        if local is None:
+            return []
+        # No tailnet at all: still show this machine, so the board works standalone.
+        return [_apply(
+            Node(name=socket.gethostname(), dns=socket.gethostname(), ip="",
+                 online=True, is_self=True),
+            local,
+        )]
     async with httpx.AsyncClient(verify=True, follow_redirects=True) as client:
-        return list(await asyncio.gather(*(_fetch(client, n, self_port) for n in nodes)))
+        return list(
+            await asyncio.gather(*(_fetch(client, n, self_port, local) for n in nodes))
+        )

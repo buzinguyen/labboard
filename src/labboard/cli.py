@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import config, media, project
+from . import config, media, project, tasks
 from .browse import human_size
 
 DEFAULT_PORT = 8765
@@ -38,17 +38,31 @@ def _cmd_serve(args) -> int:
 
 def _cmd_pin_add(args) -> int:
     path = Path(args.path).expanduser()
+    is_project = args.project is not None
+    kind = config.PROJECT if is_project else config.ARTIFACT
+    slug = (args.project or "") if is_project else (args.belongs_to or "")
     try:
         pin = config.add_pin(
             path,
             title=args.title or "",
             tags=[t.strip() for t in (args.tags or "").split(",") if t.strip()],
             note=args.note or "",
+            kind=kind,
+            project=slug,
+            main=bool(args.main),
         )
-    except NotADirectoryError as exc:
+    except (NotADirectoryError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"pinned {pin.id}  {pin.title}\n        {pin.path}")
+
+    label = "project" if pin.is_project else "pinned"
+    print(f"{label} {pin.id}  {pin.title}\n        {pin.path}")
+    if pin.is_project:
+        role = "main — this device owns its tickets" if pin.main else "facilitator"
+        print(f"        project {pin.project} · {role}")
+        tdir = tasks.tasks_dir(pin.root)
+        if not tdir.is_dir():
+            print(f"        note: {tdir} does not exist yet — tickets go there")
     return 0
 
 
@@ -67,11 +81,14 @@ def _cmd_pin_list(args) -> int:
     width = max(len(p.title) for p in pins)
     for pin in pins:
         flag = "-" if pin.archived else (" " if pin.exists else "!")
-        print(f"{flag} {pin.id}  {pin.title:<{width}}  {pin.path}")
+        kind = "P" if pin.is_project else " "
+        print(f"{flag}{kind} {pin.id}  {pin.title:<{width}}  {pin.path}")
 
     notes = []
     if any(not p.exists for p in pins):
         notes.append("! = pinned directory is missing or unreadable")
+    if any(p.is_project for p in pins):
+        notes.append("P = project pin (tickets only; no files are served)")
     if args.all and any(p.archived for p in pins):
         notes.append("- = archived")
     if notes:
@@ -116,13 +133,15 @@ def _cmd_scan(args) -> int:
             print(f"  skip  {spec.path}  (declared but does not exist)")
             skipped += 1
             continue
+        label = f"project {spec.project}" if spec.kind == "project" else spec.title
         if args.dry_run:
-            print(f"  would pin  {spec.title}  {spec.path}")
+            print(f"  would pin  {label}  {spec.path}")
         else:
             # unarchive=False: a scan must not resurrect pins deliberately archived.
             config.add_pin(spec.path, title=spec.title, tags=spec.tags, note=spec.note,
-                           unarchive=False)
-            print(f"  pinned  {spec.title}  {spec.path}")
+                           unarchive=False, kind=spec.kind, project=spec.project,
+                           main=spec.main)
+            print(f"  pinned  {label}  {spec.path}")
         added += 1
 
     verb = "would pin" if args.dry_run else "pinned"
@@ -144,6 +163,85 @@ def _cmd_pin_rm(args) -> int:
 
     print(f"error: no pin matching {target!r}", file=sys.stderr)
     return 1
+
+
+def _cmd_tasks(args) -> int:
+    """This machine's tickets. Local only — no network, no other devices."""
+    from . import board
+
+    views = [v for v in board.local_projects() if not args.project or v.slug == args.project]
+    if args.json:
+        print(json.dumps([v.to_dict() for v in views], indent=2))
+        return 0
+    if not views:
+        print("no project pins on this machine"
+              if not args.project else f"no project pinned as {args.project!r}")
+        return 1
+
+    for view in views:
+        role = "main" if view.main else "facilitator"
+        print(f"{view.slug}  ({role})  {view.path}")
+        if not view.tickets and not view.receipts:
+            print(f"    no tickets — write one to {tasks.tasks_dir(Path(view.path))}")
+        for ticket in view.tickets:
+            runs = f"  runs {', '.join(ticket.runs)}" if ticket.runs else ""
+            print(f"    {ticket.status:<8} {ticket.id:<8} {ticket.title}{runs}")
+        for receipt in view.receipts:
+            print(f"    outbox   {receipt.id:<8} {receipt.title}  → {receipt.task or '?'}")
+        print()
+    return 0
+
+
+def _cmd_inbox(args) -> int:
+    """Results other devices reported for a project, so the main device can fold them in.
+
+    This is the whole cross-device handoff: the facilitator wrote a receipt to its own
+    disk, and this pulls that text over HTTP. No files move, and nothing is written on
+    either side — the agent reading this output is what updates the ticket.
+    """
+    import asyncio
+
+    from . import board, tailnet
+
+    nodes = asyncio.run(tailnet.gather(self_port=args.port))
+    rollups = [r for r in board.rollup(nodes) if not args.project or r.slug == args.project]
+
+    if not rollups:
+        known = ", ".join(sorted(r.slug for r in board.rollup(nodes))) or "none"
+        print(f"error: no project {args.project!r} on the tailnet (known: {known})",
+              file=sys.stderr)
+        return 1
+
+    pending = [(r, rec) for r in rollups for rec in (r.receipts if args.all else r.pending)]
+
+    if args.json:
+        print(json.dumps(
+            [{**rec.to_dict(), "project": r.slug, "node": rec.node} for r, rec in pending],
+            indent=2,
+        ))
+        return 0
+
+    if not pending:
+        print("nothing waiting" + ("" if args.all else " (use --all to include acknowledged)"))
+        return 0
+
+    for entry, rec in pending:
+        print(f"--- {entry.slug} · {rec.id} · from {rec.node}"
+              f"{' · ' + rec.run if rec.run else ''}"
+              f"{' → ' + rec.task if rec.task else ''}")
+        if rec.title:
+            print(f"    {rec.title}")
+        for link in rec.artifact_links:
+            print(f"    artifacts: {link['label']}" + (f"  {link['url']}" if link.get("url")
+                  else "  (not under any pin — not viewable)"))
+        if rec.body.strip():
+            for line in rec.body.strip().splitlines():
+                print(f"    {line}")
+        print()
+
+    print(f"{len(pending)} waiting. Fold each into its ticket, then add its id to the "
+          f"ticket's `acked:` list so it stops showing as pending.", file=sys.stderr)
+    return 0
 
 
 def _cmd_cache(args) -> int:
@@ -175,6 +273,20 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--title", help="display name (defaults to the directory name)")
     add.add_argument("--tags", help="comma-separated")
     add.add_argument("--note", help="one-line description")
+    add.add_argument(
+        "--project", metavar="SLUG", nargs="?", const="",
+        help="register a PROJECT pin: read tickets from docs/log/tasks, serve no files. "
+             "SLUG joins this repo to itself on other devices (default: directory name)",
+    )
+    add.add_argument(
+        "--main", action="store_true",
+        help="this device owns the project's tickets (exactly one device should)",
+    )
+    add.add_argument(
+        "--belongs-to", metavar="SLUG", dest="belongs_to",
+        help="artifact pins: which project's outputs these are, so the dashboard "
+             "can show them beside its tickets",
+    )
     add.set_defaults(func=_cmd_pin_add)
 
     listing = pin_sub.add_parser("list", help="list pins")
@@ -205,6 +317,28 @@ def build_parser() -> argparse.ArgumentParser:
                       help=f"how deep to search (default {project.DEFAULT_MAX_DEPTH})")
     scan.add_argument("--dry-run", action="store_true", help="show what would be pinned")
     scan.set_defaults(func=_cmd_scan)
+
+    tasks_cmd = sub.add_parser(
+        "tasks",
+        help="this machine's tickets (local; no network)",
+        description=tasks.__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    tasks_cmd.add_argument("project", nargs="?", help="limit to one project slug")
+    tasks_cmd.add_argument("--json", action="store_true")
+    tasks_cmd.set_defaults(func=_cmd_tasks)
+
+    inbox = sub.add_parser(
+        "inbox",
+        help="results other devices reported for a project, to fold into its tickets",
+    )
+    inbox.add_argument("project", nargs="?", help="project slug (default: all projects)")
+    inbox.add_argument("--all", action="store_true",
+                       help="include receipts already acknowledged via `acked:`")
+    inbox.add_argument("--json", action="store_true")
+    inbox.add_argument("--port", type=int, default=DEFAULT_PORT,
+                       help="local labboard port, for querying this node without TLS")
+    inbox.set_defaults(func=_cmd_inbox)
 
     cache = sub.add_parser("cache", help="inspect or clear derived thumbnails/transcodes")
     cache.add_argument("--clear", action="store_true")

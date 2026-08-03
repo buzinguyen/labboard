@@ -103,6 +103,14 @@ def resolve(pin, relpath: str = "") -> Path:
     real paths — that is what makes the symlink case fall out correctly: a link
     pointing outside the pin resolves to an outside path and fails containment.
     """
+    # A project pin names a code checkout so labboard can read its tickets. Serving
+    # bytes from one would put the source tree — and whatever a colleague's checkout
+    # dragged in — on the tailnet. There is no relpath for which that is intended, so
+    # refuse the whole pin here rather than trying to allow-list a subtree. Tickets are
+    # read via a constant path in `tasks.py` that never sees user input.
+    if getattr(pin, "kind", "artifact") == "project":
+        raise AccessDenied("project pins expose tickets only, never files")
+
     root = pin.root
     if not root.is_dir():
         raise PinUnavailable(str(root))

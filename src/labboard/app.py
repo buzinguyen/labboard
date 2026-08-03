@@ -17,7 +17,7 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from . import __version__, browse, config, media, organize, render, tailnet
+from . import __version__, board, browse, config, media, organize, render, tailnet, tasks
 from .safety import AccessDenied, PinUnavailable, resolve
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -270,24 +270,73 @@ def create_app(self_port: int = 8765) -> FastAPI:
 
     # ---- portal ----------------------------------------------------------------
 
+    def _node_payload() -> dict:
+        """This node's own view, built in-process.
+
+        Metadata only — never file contents. Ticket *bodies* are metadata too: they are
+        the prose an agent wrote about a run, not the run's output. They travel; the
+        artifacts they describe never do.
+        """
+        return {
+            "hostname": HOSTNAME,
+            "version": __version__,
+            "pins": [{**p.to_dict(), "exists": p.exists} for p in config.load_pins()],
+            "projects": [v.to_dict() for v in board.local_projects()],
+        }
+
     @app.get("/api/node")
     def api_node():
-        """What the portal aggregates. Metadata only — never file contents."""
-        return JSONResponse(
-            {
-                "hostname": HOSTNAME,
-                "version": __version__,
-                "pins": [
-                    {**p.to_dict(), "exists": p.exists}
-                    for p in config.load_pins()
-                ],
-            }
-        )
+        """What the portal aggregates."""
+        return JSONResponse(_node_payload())
 
     @app.get("/portal", response_class=HTMLResponse)
     async def portal(request: Request):
-        nodes = await tailnet.gather(self_port=self_port)
+        nodes = await tailnet.gather(self_port=self_port, local=_node_payload())
         return _page(request, "portal.html", nodes=nodes)
+
+    # ---- projects & tickets ----------------------------------------------------
+
+    @app.get("/projects", response_class=HTMLResponse)
+    async def projects(request: Request):
+        """The dashboard: every project across every device, and what it is working on."""
+        nodes = await tailnet.gather(self_port=self_port, local=_node_payload())
+        rollups = board.rollup(nodes)
+        return _page(
+            request,
+            "projects.html",
+            rollups=rollups,
+            totals=board.totals(rollups),
+            unreachable=[n for n in nodes if not n.reachable and n.online],
+            render_ticket=render.render_ticket,
+            stale_days=board.STALE_DAYS,
+        )
+
+    @app.get("/board", response_class=HTMLResponse)
+    async def ticket_board(request: Request, status: str = "", project: str = ""):
+        """Every ticket, flat — the drill-down from a project card."""
+        nodes = await tailnet.gather(self_port=self_port, local=_node_payload())
+        rollups = board.rollup(nodes)
+
+        if project:
+            rollups = [r for r in rollups if r.slug == project]
+
+        rows = [(r, t) for r in rollups for t in r.tickets]
+        if status == "live":
+            rows = [(r, t) for r, t in rows if t.is_live]
+        elif status in tasks.STATUSES:
+            rows = [(r, t) for r, t in rows if t.status == status]
+        rows.sort(key=lambda rt: (rt[1].order, rt[0].slug.lower(), rt[1].id))
+
+        return _page(
+            request,
+            "board.html",
+            rows=rows,
+            rollups=rollups,
+            status=status,
+            project=project,
+            statuses=tasks.STATUSES,
+            render_ticket=render.render_ticket,
+        )
 
     @app.get("/healthz")
     def healthz():

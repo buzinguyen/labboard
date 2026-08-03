@@ -5,6 +5,9 @@ that into the repo: the project states where its outputs land, and `labboard sca
 registers them. Committed alongside the code, it stays correct as the project moves.
 
     # labboard.toml, at a project root
+    project = "mjlab-go2"          # slug joining this repo to itself on other devices
+    main    = "ws-3"               # HOSTNAME of the device that owns the tickets
+
     title = "safe_mjlab_zoo"       # optional prefix for every pin from this file
     tags  = ["mjlab", "safety"]    # optional defaults, merged into each pin
 
@@ -15,12 +18,24 @@ registers them. Committed alongside the code, it stays correct as the project mo
     title = "training runs"
     tags  = ["go2"]
 
+`project` creates a *project pin* on the manifest's own directory — a pin that serves no
+bytes and exists only so labboard can read `docs/log/tasks/`. `pins` create the usual
+*artifact pins*. A manifest may declare either or both.
+
+`main` is the one bit of cross-device coordination in the system, and it names a
+*hostname* rather than being a boolean. The manifest is committed, so the same file is
+read on every device that checks the repo out; a boolean would make all of them claim
+ownership at once. Naming the host means one committed line stays correct everywhere —
+the device it names owns the tickets, and the rest are facilitators that run experiments
+and report back with receipts.
+
 Paths are relative to the manifest's own directory; absolute paths are rejected so a
 manifest can never reach outside the project it describes.
 """
 
 from __future__ import annotations
 
+import socket
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +63,9 @@ class PinSpec:
     title: str
     tags: list[str] = field(default_factory=list)
     note: str = ""
+    kind: str = "artifact"
+    project: str = ""
+    main: bool = False
 
     @property
     def exists(self) -> bool:
@@ -55,6 +73,19 @@ class PinSpec:
             return self.path.is_dir()
         except OSError:
             return False
+
+
+@dataclass
+class Manifest:
+    """One parsed `labboard.toml`: its artifact pins, plus its project pin if declared."""
+
+    pins: list[PinSpec] = field(default_factory=list)
+    project: PinSpec | None = None
+
+    @property
+    def specs(self) -> list[PinSpec]:
+        """Everything this manifest registers, project pin first."""
+        return ([self.project] if self.project else []) + self.pins
 
 
 def find_manifests(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> list[Path]:
@@ -92,10 +123,28 @@ def find_manifests(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> list[Path]
     return found
 
 
-def read_manifest(manifest: Path) -> list[PinSpec]:
-    """Parse one manifest into pin specs. Raises `ManifestError` on bad input."""
+def _is_main_here(declared, hostname: str) -> bool:
+    """Does this manifest's `main` name the machine we are running on?
+
+    A hostname is the committed, per-device-correct form. `true` is still honoured for a
+    manifest that is never shared, and `false`/absent means facilitator.
+    """
+    if isinstance(declared, bool):
+        return declared
+    if not isinstance(declared, str) or not declared.strip():
+        return False
+    want = declared.strip().lower()
+    have = hostname.lower()
+    # Match the bare host as well as an FQDN on either side, so `main = "ws-3"` works
+    # on a box whose hostname is `ws-3.local`.
+    return want == have or want.split(".")[0] == have.split(".")[0]
+
+
+def read_manifest(manifest: Path, hostname: str | None = None) -> Manifest:
+    """Parse one manifest. Raises `ManifestError` on bad input."""
     manifest = Path(manifest)
     base = manifest.parent
+    hostname = hostname if hostname is not None else socket.gethostname()
 
     try:
         with manifest.open("rb") as fh:
@@ -105,6 +154,23 @@ def read_manifest(manifest: Path) -> list[PinSpec]:
 
     default_tags = [str(t) for t in data.get("tags", [])]
     prefix = str(data.get("title", "")).strip()
+
+    slug = str(data.get("project", "")).strip()
+    if slug and ("/" in slug or slug.startswith(".")):
+        # The slug is a join key rendered into pages and passed to `labboard inbox`;
+        # keep it a plain identifier rather than something path-shaped.
+        raise ManifestError(f"{manifest}: `project` must be a plain slug, not a path")
+
+    project_spec = None
+    if slug:
+        project_spec = PinSpec(
+            path=base.resolve(),
+            title=prefix or slug,
+            tags=default_tags,
+            kind="project",
+            project=slug,
+            main=_is_main_here(data.get("main"), hostname),
+        )
 
     raw: list[dict] = []
     for shorthand in data.get("pins", []):
@@ -116,8 +182,8 @@ def read_manifest(manifest: Path) -> list[PinSpec]:
             raise ManifestError(f"{manifest}: every [[pin]] needs a `path`")
         raw.append(entry)
 
-    if not raw:
-        raise ManifestError(f"{manifest}: declares no pins")
+    if not raw and project_spec is None:
+        raise ManifestError(f"{manifest}: declares neither `project` nor any pins")
 
     specs: list[PinSpec] = []
     for entry in raw:
@@ -136,12 +202,20 @@ def read_manifest(manifest: Path) -> list[PinSpec]:
                 title=f"{prefix} · {name}" if prefix else name,
                 tags=sorted({*default_tags, *(str(t) for t in entry.get("tags", []))}),
                 note=str(entry.get("note", "")),
+                # An artifact pin declared by a project's manifest still belongs to
+                # that project — that is what lets the dashboard show a project's
+                # outputs alongside its tickets.
+                project=slug,
             )
         )
-    return specs
+    return Manifest(pins=specs, project=project_spec)
 
 
-def collect(roots: list[Path], max_depth: int = DEFAULT_MAX_DEPTH) -> tuple[list[PinSpec], list[str]]:
+def collect(
+    roots: list[Path],
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    hostname: str | None = None,
+) -> tuple[list[PinSpec], list[str]]:
     """Gather pin specs from every manifest under `roots`.
 
     Returns (specs, problems). A broken manifest is reported, never fatal — one bad
@@ -160,7 +234,7 @@ def collect(roots: list[Path], max_depth: int = DEFAULT_MAX_DEPTH) -> tuple[list
 
         for manifest in manifests:
             try:
-                for spec in read_manifest(manifest):
+                for spec in read_manifest(manifest, hostname).specs:
                     if spec.path in seen:
                         continue
                     seen.add(spec.path)

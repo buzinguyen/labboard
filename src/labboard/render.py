@@ -81,6 +81,21 @@ def render_markdown(text: str, pin_id: str, doc_rel: str) -> str:
     return md.renderer.render(tokens, md.options, {})
 
 
+def render_ticket(text: str) -> str:
+    """Render a ticket body.
+
+    Two differences from `render_markdown`. Raw HTML is disabled, because a ticket body
+    reaches the dashboard from another node and there is no reason for it to carry
+    markup. And nothing is rewritten to `/raw/`: a project pin serves no bytes, so a
+    relative path here has nothing to point at — results are linked through the
+    ticket's `artifacts:` field instead.
+    """
+    md = MarkdownIt("commonmark", {"highlight": _highlight, "html": False}).enable(
+        ["table", "strikethrough"]
+    )
+    return md.render(text)
+
+
 def render_code(text: str, filename: str) -> str:
     try:
         lexer = guess_lexer_for_filename(filename, text)

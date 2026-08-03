@@ -37,8 +37,28 @@ def make_id(path: Path) -> str:
     return hashlib.sha256(str(path).encode()).hexdigest()[:10]
 
 
+ARTIFACT = "artifact"
+PROJECT = "project"
+KINDS = (ARTIFACT, PROJECT)
+
+
 @dataclass
 class Pin:
+    """A pinned directory, of one of two kinds.
+
+    `artifact` — the original kind, and the default: its *bytes* are servable. Browse,
+    download, thumbnail. This is where run outputs live.
+
+    `project` — a repo root whose tickets labboard reads. Nothing under it is served;
+    `safety.resolve()` refuses the pin outright, so pinning a project cannot expose its
+    source tree. Only `docs/log/tasks/*.md` is read, via a constant path that never
+    touches user input.
+
+    Keeping these separate is what lets a project be pinned at all: an artifact pin
+    grants the tailnet read access to a whole tree, which is fine for `~/artifacts` and
+    completely wrong for a code checkout.
+    """
+
     id: str
     path: str
     title: str
@@ -46,6 +66,16 @@ class Pin:
     note: str = ""
     added: str = ""
     archived: bool = False
+    kind: str = ARTIFACT
+    # Stable slug joining this pin to the same project on other devices.
+    project: str = ""
+    # Exactly one device should claim `main` for a project: the one that owns its
+    # tickets. Others run experiments for it and report back with receipts.
+    main: bool = False
+
+    @property
+    def is_project(self) -> bool:
+        return self.kind == PROJECT
 
     @property
     def root(self) -> Path:
@@ -85,6 +115,9 @@ class Pin:
             "note": self.note,
             "added": self.added,
             "archived": self.archived,
+            "kind": self.kind,
+            "project": self.project,
+            "main": self.main,
         }
 
 
@@ -97,6 +130,12 @@ def load_pins() -> list[Pin]:
     pins = []
     for raw in data.get("pins", []):
         try:
+            kind = str(raw.get("kind") or ARTIFACT)
+            if kind not in KINDS:
+                # Unrecognized kind means a config from a newer or foreign version.
+                # Fail closed: PROJECT serves no bytes, so an unknown pin cannot
+                # accidentally expose a tree we do not understand.
+                kind = PROJECT
             pins.append(
                 Pin(
                     id=raw["id"],
@@ -106,12 +145,23 @@ def load_pins() -> list[Pin]:
                     note=raw.get("note", ""),
                     added=raw.get("added", ""),
                     archived=bool(raw.get("archived", False)),
+                    kind=kind,
+                    project=str(raw.get("project", "")),
+                    main=bool(raw.get("main", False)),
                 )
             )
         except KeyError:
             # A malformed entry must not take the whole board down.
             continue
     return pins
+
+
+def project_pins() -> list[Pin]:
+    return [p for p in load_pins() if p.is_project and not p.archived]
+
+
+def artifact_pins() -> list[Pin]:
+    return [p for p in load_pins() if not p.is_project and not p.archived]
 
 
 def active_pins() -> list[Pin]:
@@ -139,6 +189,9 @@ def add_pin(
     tags: list[str] | None = None,
     note: str = "",
     unarchive: bool = True,
+    kind: str = ARTIFACT,
+    project: str = "",
+    main: bool = False,
 ) -> Pin:
     """Register a directory. Idempotent — re-adding an existing path updates it in place.
 
@@ -147,6 +200,8 @@ def add_pin(
     (`scan`) pass False, otherwise every scan would resurrect pins you archived
     on purpose.
     """
+    if kind not in KINDS:
+        raise ValueError(f"unknown pin kind: {kind!r}")
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_dir():
         raise NotADirectoryError(f"not a directory: {resolved}")
@@ -159,6 +214,9 @@ def add_pin(
         tags=tags or [],
         note=note,
         added=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        kind=kind,
+        project=project or (resolved.name if kind == PROJECT else ""),
+        main=main,
     )
     for i, existing in enumerate(pins):
         if existing.id == pin.id:

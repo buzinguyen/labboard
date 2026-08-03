@@ -219,6 +219,92 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
 .note.warn { border-color:var(--warn); }
 .empty { color:var(--muted); text-align:center; padding:44px 16px; }
 
+/* ---- projects dashboard ---- */
+.totals { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+.stat {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:9px 14px; min-width:92px;
+}
+.stat .n { font-size:21px; font-weight:650; line-height:1.15; letter-spacing:-.02em; }
+.stat .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+.stat.alert .n { color:var(--warn); }
+.stat.bad .n { color:var(--danger); }
+
+.proj {
+  background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--line);
+  border-radius:var(--radius); padding:15px 17px; margin-bottom:13px;
+}
+.proj.pending { border-left-color:var(--accent); }
+.proj.blocked, .proj.warn { border-left-color:var(--danger); }
+.proj.stale  { border-left-color:var(--warn); }
+.proj.active { border-left-color:var(--accent); }
+.proj > .head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.proj > .head h2 { margin:0; font-size:17px; }
+.proj .where { font-size:12px; color:var(--muted); }
+.proj .where b { color:var(--fg); font-weight:600; }
+
+.pill {
+  font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--line);
+  color:var(--muted); white-space:nowrap;
+}
+.pill.on   { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+.pill.warn { background:transparent; color:var(--warn); border-color:var(--warn); }
+.pill.bad  { background:transparent; color:var(--danger); border-color:var(--danger); }
+
+/* the one current ticket */
+.current { margin:11px 0; padding:11px 13px; background:var(--bg); border-radius:8px; }
+.current .tid { font-size:12px; color:var(--muted); }
+.current .ttitle { font-size:15px; font-weight:550; margin:1px 0 6px; }
+.current .meta { display:flex; gap:7px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--muted); }
+.current.none { color:var(--muted); font-size:13px; }
+
+.ticket-body { font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
+.ticket-body h1, .ticket-body h2, .ticket-body h3 { font-size:13px; margin:9px 0 3px; }
+.ticket-body > *:first-child { margin-top:0; }
+.ticket-body p, .ticket-body ul, .ticket-body ol { margin:3px 0; }
+
+/* receipts waiting to be folded in */
+.receipts { margin:10px 0 0; }
+.receipt {
+  display:flex; gap:9px; align-items:baseline; font-size:12.5px; padding:5px 0;
+  border-top:1px dashed var(--line);
+}
+.receipt .who { color:var(--muted); white-space:nowrap; }
+.receipt .what { min-width:0; }
+
+/* private notes — localStorage only, never sent anywhere */
+.notebox { margin-top:11px; }
+.notebox .nhead {
+  display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px;
+}
+.notebox .nhead .saved { color:var(--accent); text-transform:none; letter-spacing:0; font-size:11px; }
+.notebox textarea {
+  width:100%; min-height:66px; resize:vertical; background:var(--bg); color:var(--fg);
+  border:1px solid var(--line); border-radius:7px; padding:9px 11px;
+  font:inherit; font-size:13px; line-height:1.5;
+}
+.notebox textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+.notebox .nfoot { display:flex; align-items:center; gap:8px; margin-top:5px; }
+.notebox button { font-size:12px; padding:4px 10px; }
+.stale-note { color:var(--warn); font-size:11.5px; }
+
+/* board */
+table.tickets { width:100%; border-collapse:collapse; font-size:14px; }
+table.tickets th {
+  text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--line);
+}
+table.tickets td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+table.tickets tr:hover td { background:var(--accent-soft); }
+table.tickets .tid { white-space:nowrap; color:var(--muted); font-size:13px; }
+.st { font-size:11px; padding:1px 8px; border-radius:99px; white-space:nowrap; }
+.st.active  { background:var(--accent-soft); color:var(--accent); }
+.st.blocked { background:transparent; color:var(--danger); border:1px solid var(--danger); }
+.st.open    { background:transparent; color:var(--muted); border:1px solid var(--line); }
+.st.done    { background:transparent; color:var(--muted); }
+.st.dropped { background:transparent; color:var(--muted); text-decoration:line-through; }
+
 /* portal */
 .node { margin-bottom:18px; }
 .node .head { display:flex; align-items:center; gap:9px; margin-bottom:8px; }
@@ -233,6 +319,8 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
   <span class="brand"><a href="/" style="color:inherit">labboard</a></span>
   <span class="host mono">{{ hostname }}</span>
   <nav>
+    <a href="/projects">Projects</a>
+    <a href="/board">Board</a>
     <a href="/">Pins</a>
     <a href="/portal">Tailnet</a>
   </nav>

@@ -31,7 +31,7 @@ tags = ["go2"]
 
 
 def test_shorthand_and_long_form_both_parse(repo):
-    specs = read_manifest(repo / "proj/labboard.toml")
+    specs = read_manifest(repo / "proj/labboard.toml").pins
     assert len(specs) == 2
 
     by_name = {s.path.name: s for s in specs}
@@ -43,7 +43,7 @@ def test_shorthand_and_long_form_both_parse(repo):
 
 
 def test_paths_resolve_relative_to_the_manifest(repo):
-    specs = read_manifest(repo / "proj/labboard.toml")
+    specs = read_manifest(repo / "proj/labboard.toml").pins
     assert {s.path for s in specs} == {
         repo / "proj/logs",
         repo / "proj/outputs/eval",
@@ -65,7 +65,7 @@ def test_paths_escaping_the_project_are_rejected(tmp_path):
 
 def test_manifest_declaring_nothing_is_an_error(tmp_path):
     (tmp_path / "labboard.toml").write_text('title = "x"\n')
-    with pytest.raises(ManifestError, match="no pins"):
+    with pytest.raises(ManifestError, match="neither"):
         read_manifest(tmp_path / "labboard.toml")
 
 
@@ -134,10 +134,61 @@ def test_collect_on_a_missing_root_is_reported_not_raised(tmp_path):
 
 def test_spec_exists_reflects_the_filesystem(repo):
     (repo / "proj/labboard.toml").write_text('pins = ["logs", "never-created"]\n')
-    specs = {s.path.name: s for s in read_manifest(repo / "proj/labboard.toml")}
+    specs = {s.path.name: s for s in read_manifest(repo / "proj/labboard.toml").pins}
     assert specs["logs"].exists
     assert not specs["never-created"].exists
 
 
 def test_manifest_name_is_stable():
     assert project.MANIFEST_NAME == "labboard.toml"
+
+
+# --- project declarations (main is a hostname, because the manifest is committed) ---
+
+
+def test_a_manifest_can_declare_a_project_pin(tmp_path):
+    (tmp_path / "labboard.toml").write_text(
+        'project = "mjlab-go2"\nmain = "ws-3"\ntitle = "Go2"\npins = ["outputs"]\n'
+    )
+    (tmp_path / "outputs").mkdir()
+
+    manifest = read_manifest(tmp_path / "labboard.toml", hostname="ws-3")
+
+    assert manifest.project.kind == "project"
+    assert manifest.project.project == "mjlab-go2"
+    assert manifest.project.path == tmp_path.resolve()
+    assert manifest.project.main is True
+    # The artifact pin inherits the slug, so the dashboard can group them.
+    assert [p.project for p in manifest.pins] == ["mjlab-go2"]
+    assert manifest.pins[0].kind == "artifact"
+
+
+def test_main_is_false_on_a_device_the_manifest_does_not_name(tmp_path):
+    """The same committed file must not make every checkout claim ownership."""
+    (tmp_path / "labboard.toml").write_text('project = "p"\nmain = "ws-3"\n')
+    assert read_manifest(tmp_path / "labboard.toml", hostname="ws-4").project.main is False
+    assert read_manifest(tmp_path / "labboard.toml", hostname="ws-3").project.main is True
+
+
+def test_main_matches_the_bare_host_of_an_fqdn(tmp_path):
+    (tmp_path / "labboard.toml").write_text('project = "p"\nmain = "ws-3"\n')
+    got = read_manifest(tmp_path / "labboard.toml", hostname="ws-3.local")
+    assert got.project.main is True
+
+
+def test_a_literal_true_still_works_for_an_unshared_manifest(tmp_path):
+    (tmp_path / "labboard.toml").write_text('project = "p"\nmain = true\n')
+    assert read_manifest(tmp_path / "labboard.toml", hostname="anything").project.main is True
+
+
+def test_a_manifest_may_declare_only_a_project(tmp_path):
+    (tmp_path / "labboard.toml").write_text('project = "p"\n')
+    manifest = read_manifest(tmp_path / "labboard.toml", hostname="h")
+    assert manifest.pins == []
+    assert manifest.specs == [manifest.project]
+
+
+def test_a_path_shaped_slug_is_refused(tmp_path):
+    (tmp_path / "labboard.toml").write_text('project = "../etc"\n')
+    with pytest.raises(ManifestError, match="plain slug"):
+        read_manifest(tmp_path / "labboard.toml", hostname="h")

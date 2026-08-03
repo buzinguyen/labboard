@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Board{% endblock %}
+{% block content %}
+
+<h1>Board</h1>
+<p class="sub">Every ticket across every project. Bodies expand in place.</p>
+
+<div class="toolbar">
+  <div class="seg">
+    <a class="{{ 'on' if not status }}" href="/board{% if project %}?project={{ project }}{% endif %}">All</a>
+    <a class="{{ 'on' if status == 'live' }}" href="/board?status=live{% if project %}&project={{ project }}{% endif %}">Live</a>
+    {% for s in statuses %}
+    <a class="{{ 'on' if status == s }}" href="/board?status={{ s }}{% if project %}&project={{ project }}{% endif %}">{{ s }}</a>
+    {% endfor %}
+  </div>
+  <span class="spacer"></span>
+  {% if project %}
+  <a class="pill on" href="/board{% if status %}?status={{ status }}{% endif %}">{{ project }} ✕</a>
+  {% endif %}
+  <a class="btn ghost" href="/projects">Dashboard →</a>
+</div>
+
+{% if not rows %}
+<div class="empty">
+  <p>Nothing here.</p>
+  <p class="sub">
+    {% if not rollups %}
+      No projects are registered. Pin one with
+      <code>labboard pin add . --project &lt;slug&gt; --main</code>.
+    {% else %}
+      No tickets match this filter.
+    {% endif %}
+  </p>
+</div>
+{% else %}
+
+<table class="tickets">
+  <thead>
+    <tr>
+      <th>Ticket</th><th>Project</th><th>Title</th><th>Status</th><th>Runs</th><th>Moved</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r, t in rows %}
+    <tr>
+      <td class="tid mono">{{ t.id }}</td>
+      <td><a href="/board?project={{ r.slug }}">{{ r.slug }}</a></td>
+      <td>
+        {% if t.body %}
+        <details>
+          <summary style="cursor:pointer">{{ t.title }}</summary>
+          <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
+        </details>
+        {% else %}{{ t.title }}{% endif %}
+        {% for link in t.artifact_links %}
+          {% if link.url %}<a href="{{ link.url }}" class="pill">results ↗</a>{% endif %}
+        {% endfor %}
+      </td>
+      <td><span class="st {{ t.status }}">{{ t.status }}</span></td>
+      <td class="sub mono" style="font-size:12px">{{ t.runs | join(', ') }}</td>
+      <td class="sub" style="font-size:12px; white-space:nowrap">
+        {% if t.age_days is not none %}{{ t.age_days | int }}d{% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}
