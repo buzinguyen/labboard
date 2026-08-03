@@ -311,6 +311,23 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
 .receipt-card { border-style:dashed; }
 .receipt-card.acked { opacity:.6; }
 
+/* ticket validation */
+details.lint {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:9px 13px; margin:12px 0;
+}
+details.lint > summary {
+  cursor:pointer; list-style:none; display:flex; align-items:center; gap:7px; font-size:13px;
+}
+details.lint > summary::-webkit-details-marker { display:none; }
+details.lint > summary::before { content:'▸'; color:var(--muted); font-size:11px; }
+details.lint[open] > summary::before { content:'▾'; }
+details.lint ul { margin:9px 0 4px; padding-left:20px; font-size:13px; line-height:1.55; }
+details.lint li { margin-bottom:3px; }
+details.lint li.error::marker { color:var(--danger); }
+details.lint li.warn::marker { color:var(--warn); }
+details.lint li a { margin-right:5px; }
+
 .pill {
   font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--line);
   color:var(--muted); white-space:nowrap;
@@ -320,6 +337,14 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
 .pill.bad  { background:transparent; color:var(--danger); border-color:var(--danger); }
 
 .tid { font-size:12px; color:var(--muted); }
+
+/* A reference labboard resolved (a path, a run, another ticket) rather than a link the
+   author typed — worth distinguishing, so a dotted rule instead of a plain underline. */
+a.xref {
+  border-bottom:1px dotted var(--accent); text-decoration:none;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.94em;
+}
+a.xref:hover { background:var(--accent-soft); text-decoration:none; }
 
 .ticket-body { font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
 .ticket-body h1, .ticket-body h2, .ticket-body h3 { font-size:13px; margin:9px 0 3px; }

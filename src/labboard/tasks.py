@@ -37,6 +37,7 @@ it can fold the result into the ticket and close it.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -181,6 +182,8 @@ class Task:
     node: str = ""
     node_url: str = ""
     artifact_links: list[dict] = field(default_factory=list)
+    # Body mentions that resolve to something viewable — see `find_refs`.
+    refs: list[dict] = field(default_factory=list)
 
     @property
     def is_live(self) -> bool:
@@ -230,6 +233,7 @@ class Task:
             "task": self.task,
             "run": self.run,
             "artifact_links": self.artifact_links,
+            "refs": self.refs,
         }
 
 
@@ -252,6 +256,7 @@ def from_dict(raw: dict) -> Task:
         task=str(raw.get("task", "")),
         run=str(raw.get("run", "")),
         artifact_links=[d for d in raw.get("artifact_links", []) if isinstance(d, dict)],
+        refs=[d for d in raw.get("refs", []) if isinstance(d, dict)],
     )
 
 
@@ -389,8 +394,50 @@ def artifact_url(raw: str, pins: list) -> str | None:
     return best[1] if best else None
 
 
+# A path-ish token: `~/a/b`, `/home/buzi/runs/E014`. At least two segments, so a bare
+# `/` or a fragment like `and/or` never qualifies. Over-matching is harmless — a token
+# only becomes a link if it actually resolves to a pin, so resolution IS the filter.
+PATH_TOKEN = re.compile(r"(?:~|/[\w.+-]+)(?:/[\w.+-]+)+/?")
+
+# `E014`, `T007` — the ids the logging convention already uses.
+RUN_TOKEN = re.compile(r"\bE\d{2,}\b")
+
+
+def find_refs(task: Task, pins: list) -> list[dict]:
+    """Things mentioned in a ticket body that can be turned into links.
+
+    Resolved here, on the node that owns the pins, rather than at render time on
+    whichever node you happen to be looking at — the viewer has no idea what
+    `~/artifacts/go2/E014` means on someone else's disk.
+
+    Two kinds are found: filesystem paths that land under an artifact pin, and run ids
+    whose directory is one of the ticket's own `artifacts:`.
+    """
+    refs: list[dict] = []
+    seen: set[str] = set()
+
+    def add(text: str, url: str | None) -> None:
+        if url and text not in seen:
+            seen.add(text)
+            refs.append({"text": text, "url": url})
+
+    for match in PATH_TOKEN.finditer(task.body or ""):
+        raw = match.group(0).rstrip(".,;:)]}")
+        if raw not in seen:
+            add(raw, artifact_url(raw, pins))
+
+    # `E014` in the prose should reach the same place as the E014 in `artifacts:`.
+    for raw in task.artifacts:
+        name = Path(raw).name
+        if RUN_TOKEN.fullmatch(name):
+            add(name, artifact_url(raw, pins))
+
+    return refs
+
+
 def attach_links(task: Task, pins: list) -> Task:
     task.artifact_links = [
         {"label": raw, "url": artifact_url(raw, pins)} for raw in task.artifacts
     ]
+    task.refs = find_refs(task, pins)
     return task

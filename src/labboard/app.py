@@ -331,6 +331,8 @@ def create_app(self_port: int = 8765) -> FastAPI:
             r=entry,
             groups=[(s, ts) for s, ts in groups if ts],
             render_ticket=render.render_ticket,
+            # So a `T006` written in one ticket's prose links to that ticket here.
+            ticket_ids=[t.id for t in entry.tickets],
             stale_days=board.STALE_DAYS,
         )
 
@@ -355,6 +357,7 @@ def create_app(self_port: int = 8765) -> FastAPI:
             "board.html",
             rows=rows,
             rollups=rollups,
+            ticket_ids={r.slug: [t.id for t in r.tickets] for r in rollups},
             status=status,
             project=project,
             statuses=tasks.STATUSES,

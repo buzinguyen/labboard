@@ -167,7 +167,7 @@ def _cmd_pin_rm(args) -> int:
 
 def _cmd_tasks(args) -> int:
     """This machine's tickets. Local only — no network, no other devices."""
-    from . import board
+    from . import board, lint
 
     views = [v for v in board.local_projects() if not args.project or v.slug == args.project]
     if args.json:
@@ -177,6 +177,8 @@ def _cmd_tasks(args) -> int:
         print("no project pins on this machine"
               if not args.project else f"no project pinned as {args.project!r}")
         return 1
+
+    errors = warnings = 0
 
     for view in views:
         role = "main" if view.main else "facilitator"
@@ -188,8 +190,34 @@ def _cmd_tasks(args) -> int:
             print(f"    {ticket.status:<8} {ticket.id:<8} {ticket.title}{runs}")
         for receipt in view.receipts:
             print(f"    outbox   {receipt.id:<8} {receipt.title}  → {receipt.task or '?'}")
+
+        n_err, n_warn = lint.summarize(view.problems)
+        errors += n_err
+        warnings += n_warn
+
+        if args.check and view.problems:
+            print()
+            for problem in view.problems:
+                mark = "ERROR" if problem.level == lint.ERROR else "warn "
+                where = f"{problem.where}: " if problem.where else ""
+                # stdout, not stderr: under --check these lines ARE the output, and
+                # splitting streams interleaves them arbitrarily with the listing.
+                print(f"    {mark}  {where}{problem.message}")
+        elif view.problems:
+            print(f"    ({n_err} error{'' if n_err == 1 else 's'}, "
+                  f"{n_warn} warning{'' if n_warn == 1 else 's'} — run with --check)")
         print()
-    return 0
+
+    if not args.check:
+        return 0
+
+    if errors or warnings:
+        print(f"{errors} error(s), {warnings} warning(s)")
+    else:
+        print("all tickets well-formed")
+    # Errors fail the command so a hook or a session-end check can act on it;
+    # warnings are advisory and must not block finishing work.
+    return 1 if errors else 0
 
 
 def _cmd_inbox(args) -> int:
@@ -326,6 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tasks_cmd.add_argument("project", nargs="?", help="limit to one project slug")
     tasks_cmd.add_argument("--json", action="store_true")
+    tasks_cmd.add_argument(
+        "--check", action="store_true",
+        help="validate every ticket and list what is wrong; exits non-zero on errors. "
+             "Run this before ending a session that touched a ticket.",
+    )
     tasks_cmd.set_defaults(func=_cmd_tasks)
 
     inbox = sub.add_parser(

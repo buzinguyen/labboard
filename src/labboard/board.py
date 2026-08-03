@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from . import config, tasks
+from . import config, lint, tasks
 
 # A project whose active ticket has not moved in this long is worth flagging.
 STALE_DAYS = 7
@@ -34,6 +34,7 @@ class ProjectView:
     path: str
     tickets: list[tasks.Task] = field(default_factory=list)
     receipts: list[tasks.Task] = field(default_factory=list)
+    problems: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +45,7 @@ class ProjectView:
             "path": self.path,
             "tickets": [t.to_dict() for t in self.tickets],
             "receipts": [t.to_dict() for t in self.receipts],
+            "problems": [p.to_dict() for p in self.problems],
         }
 
 
@@ -59,6 +61,9 @@ def local_projects() -> list[ProjectView]:
             tasks.attach_links(task, artifacts)
         views.append(
             ProjectView(
+                # Checked here rather than at render time: only this node has the pins
+                # and the disk needed to tell whether an artifact is actually reachable.
+                problems=lint.check(tickets, receipts, artifacts),
                 slug=slug,
                 title=pin.title or slug,
                 main=pin.main,
@@ -86,6 +91,7 @@ class Rollup:
     receipts: list[tasks.Task] = field(default_factory=list)
     artifact_pins: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    problems: list = field(default_factory=list)
 
     # ---- the one ticket in flight ----
 
@@ -146,9 +152,13 @@ class Rollup:
         return [r for r in self.receipts if r.id not in acked]
 
     @property
+    def errors(self) -> list:
+        return [p for p in self.problems if p.level == lint.ERROR]
+
+    @property
     def health(self) -> str:
         """Coarse state for the dashboard: what, if anything, needs attention."""
-        if self.warnings:
+        if self.warnings or self.errors:
             return "warn"
         if self.pending:
             return "pending"
@@ -195,6 +205,7 @@ def rollup(nodes: list) -> list[Rollup]:
                 entry.tickets = [
                     _locate(tasks.from_dict(t), node) for t in raw.get("tickets", [])
                 ]
+                entry.problems = [lint.from_dict(p) for p in raw.get("problems", [])]
 
             # Receipts come from wherever the run happened — that is the point of them.
             entry.receipts.extend(
@@ -255,6 +266,9 @@ def _locate(task: tasks.Task, node) -> tasks.Task:
         {**link, "url": node.url(link["url"]) if link.get("url") else None}
         for link in task.artifact_links
     ]
+    task.refs = [
+        {**ref, "url": node.url(ref["url"])} for ref in task.refs if ref.get("url")
+    ]
     return task
 
 
@@ -271,5 +285,6 @@ def totals(rollups: list[Rollup]) -> dict:
         "closed_recently": sum(entry.closed_recently for entry in rollups),
         "pending": sum(len(entry.pending) for entry in rollups),
         "stale": sum(1 for entry in rollups if entry.is_stale),
-        "needs_attention": sum(1 for entry in rollups if entry.warnings),
+        "needs_attention": sum(1 for entry in rollups if entry.warnings or entry.errors),
+        "problems": sum(len(entry.problems) for entry in rollups),
     }

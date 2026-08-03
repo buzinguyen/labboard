@@ -116,6 +116,7 @@ labboard pin restore <id|path>
 labboard pin rm <id|path>        # permanent; prefer archive
 labboard scan <dir>...           # register pins declared in labboard.toml manifests
 labboard tasks [project]         # this machine's tickets (local, no network)
+labboard tasks --check           # validate every ticket; non-zero exit on errors
 labboard inbox [project]         # results other devices reported, to fold into tickets
 labboard cache [--clear]         # how much derived data has accumulated
 ```
@@ -180,6 +181,25 @@ write them, which is what keeps the service read-only against your repos.
 A ticket is a *question*; an `E###` row is *one run launched to answer it*. The ticket
 links down to runs and out to artifacts; it never duplicates what `experiments.md`
 already records.
+
+### References in a ticket body
+
+Anything a ticket mentions that labboard can resolve becomes a link:
+
+| In the body | Becomes |
+|---|---|
+| `~/artifacts/go2/E014` | the browse page for that directory |
+| `E014` | the same, when that run is one of the ticket's `artifacts:` |
+| `T006` | that ticket on this project's page |
+| `https://wandb.ai/...` | a plain link |
+
+Paths are resolved on the node that owns the pins — a viewer has no idea what
+`~/artifacts/go2/E014` means on someone else's disk — and only paths that actually land
+under an artifact pin become links. Resolution *is* the filter, so a path to somewhere
+unpinned stays as plain text rather than becoming a link that 404s.
+
+Rewriting happens on the markdown token stream, so a path inside a code span or a fenced
+block is left exactly as written, and a link you typed yourself keeps its own target.
 
 ### One main device per project
 
@@ -257,6 +277,36 @@ is reported and skipped, never fatal to the scan. `--dry-run` shows what would h
 Scanning is idempotent and deliberately **will not un-archive** a pin you archived — only
 an explicit `pin add` does that.
 
+### Checking that a ticket is well-formed
+
+labboard cannot stop an agent from writing a bad ticket — it never writes to a project
+repo and has no hook into an agent's session. What it does instead is make the gap
+visible from both sides:
+
+```bash
+labboard tasks --check     # exits 1 on errors, 0 on warnings only
+```
+
+```
+ERROR  T006: status is `done` but `closed:` is empty
+ERROR  R-x: receipt targets `T404`, which is not a ticket here
+warn   T007: no `## Done when` — without it nobody can tell when to close it
+warn   T007: `~/runs/E014` is not under any artifact pin, so the result is not
+             viewable from the board — pin its output root
+```
+
+**Errors** are things wrong on the face of the ticket: two tickets active at once, a
+duplicate id, a missing or future `updated:`, `done` without `closed:`, a receipt naming
+a ticket that does not exist. **Warnings** need a judgement call, and are mostly about
+whether a result is actually reachable: an artifact outside every pin, an artifact path
+that does not exist, a done ticket with no `## Results`, a live ticket with no
+`## Done when`.
+
+The same checks render on the project page, so a ticket an agent wrote badly is visible
+where you would go to read it. Nothing is refused at load time — a ticket with a missing
+`updated:` is still worth reading, and hiding it would hide the very problem being
+reported.
+
 ### For agents
 
 An agent that just produced artifacts should register them itself:
@@ -292,6 +342,8 @@ updated: 2026-08-02
 loiter_rate 0.31 → 0.04 at 18k steps.
 EOF
 ```
+
+Then, before finishing, `labboard tasks --check`.
 
 Rules worth internalising: never write a ticket on a device that is not `main` for that
 project — write a receipt instead. Never put results *files* in a ticket; put the path in
@@ -332,7 +384,8 @@ uv run pytest        # the guard is covered adversarially; keep it that way
 |---|---|
 | `src/labboard/safety.py` | path guard — the security boundary |
 | `src/labboard/config.py` | pins.toml read/write; artifact vs project pins |
-| `src/labboard/tasks.py` | ticket + receipt files, frontmatter, artifact links |
+| `src/labboard/tasks.py` | ticket + receipt files, frontmatter, artifact links, refs |
+| `src/labboard/lint.py` | ticket validation, shared by `--check` and the board |
 | `src/labboard/board.py` | cross-device project rollup and liveness stats |
 | `src/labboard/browse.py` | directory listing, file-kind classification |
 | `src/labboard/media.py` | ffmpeg thumbnails + lazy transcode |

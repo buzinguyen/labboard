@@ -237,3 +237,53 @@ def test_preview_strips_list_and_quote_markers():
 def test_preview_of_a_headings_only_body_is_empty():
     task = tasks.Task(id="T1", title="t", status="open", body="## Question\n## Results\n")
     assert task.preview == ""
+
+
+# --- clickable references in the body --------------------------------------------
+
+
+def test_a_path_under_a_pin_becomes_a_ref(pins):
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body=f"Results landed in {pins['root']}/go2/E014 overnight.")
+    refs = tasks.find_refs(task, config.artifact_pins())
+    assert [r["text"] for r in refs] == [f"{pins['root']}/go2/E014"]
+    assert refs[0]["url"].startswith("/b/")
+
+
+def test_a_path_outside_every_pin_is_not_a_ref(pins, tmp_path):
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body=f"see {tmp_path}/elsewhere/thing for the raw logs")
+    assert tasks.find_refs(task, config.artifact_pins()) == []
+
+
+def test_prose_that_merely_contains_a_slash_is_not_a_path(pins):
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body="either/or, and 3/4 of runs; see and/or")
+    assert tasks.find_refs(task, config.artifact_pins()) == []
+
+
+def test_trailing_punctuation_is_not_part_of_the_path(pins):
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body=f"landed in {pins['root']}/go2/E014.")
+    refs = tasks.find_refs(task, config.artifact_pins())
+    assert refs and not refs[0]["text"].endswith(".")
+
+
+def test_a_run_id_resolves_through_the_tickets_own_artifacts(pins):
+    """`E014` in prose should reach the same place as the E014 in `artifacts:`."""
+    task = tasks.Task(id="T1", title="t", status="open",
+                      artifacts=[f"{pins['root']}/go2/E014"],
+                      body="E014 converged at 18k steps.")
+    refs = {r["text"]: r["url"] for r in tasks.find_refs(task, config.artifact_pins())}
+    assert "E014" in refs and refs["E014"].startswith("/b/")
+
+
+def test_a_run_id_with_no_matching_artifact_is_not_a_ref(pins):
+    task = tasks.Task(id="T1", title="t", status="open", body="E099 is queued.")
+    assert [r["text"] for r in tasks.find_refs(task, config.artifact_pins())] == []
+
+
+def test_refs_are_deduplicated(pins):
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body=f"{pins['root']}/go2 twice: {pins['root']}/go2")
+    assert len(tasks.find_refs(task, config.artifact_pins())) == 1

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from pathlib import PurePosixPath
 from urllib.parse import quote, urlparse
 
 from markdown_it import MarkdownIt
+from markdown_it.token import Token
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name, guess_lexer_for_filename
@@ -81,19 +83,106 @@ def render_markdown(text: str, pin_id: str, doc_rel: str) -> str:
     return md.renderer.render(tokens, md.options, {})
 
 
-def render_ticket(text: str) -> str:
-    """Render a ticket body.
+def _autolink_rules(refs, ticket_ids, slug: str):
+    """Build one alternation over everything linkable, plus its text→URL lookup.
+
+    Longest first, so `~/artifacts/go2/E014` wins over `~/artifacts/go2` when both are
+    known. Word boundaries stop `T00` matching inside `T007` and stop a path fragment
+    matching mid-path.
+    """
+    lookup: dict[str, str] = {}
+    for ref in refs or []:
+        if ref.get("text") and ref.get("url"):
+            lookup[ref["text"]] = ref["url"]
+    for tid in ticket_ids or ():
+        if slug and tid:
+            lookup.setdefault(tid, f"/p/{slug}#{tid}")
+
+    if not lookup:
+        return None, {}
+
+    alternation = "|".join(re.escape(k) for k in sorted(lookup, key=len, reverse=True))
+    return re.compile(rf"(?<![\w])(?:{alternation})(?![\w])"), lookup
+
+
+def _split_text(content: str, pattern, lookup) -> list[Token]:
+    """Cut one text token into text/link/text pieces."""
+    pieces: list[Token] = []
+    pos = 0
+
+    def text_token(value: str) -> Token:
+        tok = Token("text", "", 0)
+        tok.content = value
+        return tok
+
+    for match in pattern.finditer(content):
+        url = lookup.get(match.group(0))
+        if url is None:
+            continue  # leave it as prose; the next slice will pick the text back up
+        if match.start() > pos:
+            pieces.append(text_token(content[pos:match.start()]))
+        opener = Token("link_open", "a", 1)
+        opener.attrSet("href", url)
+        opener.attrSet("class", "xref")
+        pieces.append(opener)
+        pieces.append(text_token(match.group(0)))
+        pieces.append(Token("link_close", "a", -1))
+        pos = match.end()
+
+    if not pieces:
+        return [text_token(content)]
+    if pos < len(content):
+        pieces.append(text_token(content[pos:]))
+    return pieces
+
+
+def _autolink(tokens: list[Token], pattern, lookup) -> None:
+    """Rewrite matching prose into links, in place.
+
+    Works on the token stream rather than the rendered HTML: code spans are their own
+    token type and are skipped for free, and `depth` keeps us out of the text inside an
+    existing link. Neither is true of a regex over the output HTML.
+    """
+    for token in tokens:
+        if token.type != "inline" or not token.children:
+            continue
+        rebuilt: list[Token] = []
+        depth = 0
+        for child in token.children:
+            if child.type == "link_open":
+                depth += 1
+            elif child.type == "link_close":
+                depth -= 1
+            if child.type == "text" and depth == 0:
+                rebuilt.extend(_split_text(child.content, pattern, lookup))
+            else:
+                rebuilt.append(child)
+        token.children = rebuilt
+
+
+def render_ticket(text: str, refs=None, ticket_ids=None, slug: str = "") -> str:
+    """Render a ticket body, making its references clickable.
 
     Two differences from `render_markdown`. Raw HTML is disabled, because a ticket body
     reaches the dashboard from another node and there is no reason for it to carry
     markup. And nothing is rewritten to `/raw/`: a project pin serves no bytes, so a
-    relative path here has nothing to point at — results are linked through the
-    ticket's `artifacts:` field instead.
+    relative path here has nothing to point at.
+
+    What does become clickable: bare URLs (wandb, GitHub) via linkify; artifact paths
+    and run ids, resolved on the owning node into `refs`; and `T###` mentions, which
+    link to that ticket on this project's page.
     """
-    md = MarkdownIt("commonmark", {"highlight": _highlight, "html": False}).enable(
-        ["table", "strikethrough"]
+    md = (
+        MarkdownIt("commonmark", {"highlight": _highlight, "html": False, "linkify": True})
+        .enable(["table", "strikethrough", "linkify"])
     )
-    return md.render(text)
+    tokens = md.parse(text)
+
+    pattern, lookup = _autolink_rules(refs, ticket_ids, slug)
+    if pattern is not None:
+        _autolink(tokens, pattern, lookup)
+
+    return md.renderer.render(tokens, md.options, {})
 
 
 def render_code(text: str, filename: str) -> str:

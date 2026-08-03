@@ -23,6 +23,28 @@
 <div class="note warn">{{ w }}</div>
 {% endfor %}
 
+{% if r.problems %}
+<details class="lint" {{ 'open' if r.errors }}>
+  <summary>
+    {% if r.errors %}<span class="pill bad">{{ r.errors | length }} error{{ '' if r.errors | length == 1 else 's' }}</span>{% endif %}
+    {% set warns = r.problems | rejectattr('level', 'equalto', 'error') | list %}
+    {% if warns %}<span class="pill warn">{{ warns | length }} warning{{ '' if warns | length == 1 else 's' }}</span>{% endif %}
+    <span class="sub">in how these tickets are written</span>
+  </summary>
+  <ul>
+    {% for p in r.problems %}
+    <li class="{{ p.level }}">
+      {% if p.where %}<a class="mono" href="#{{ p.where }}">{{ p.where }}</a>{% endif %}
+      {{ p.message }}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="sub" style="font-size:11.5px">
+    On {{ r.main_node or 'the main device' }}: <code>labboard tasks {{ r.slug }} --check</code>
+  </p>
+</details>
+{% endif %}
+
 <div class="totals" style="margin-top:14px">
   <div class="stat"><div class="n">{{ r.counts.active }}</div><div class="k">in flight</div></div>
   <div class="stat"><div class="n">{{ r.counts.open }}</div><div class="k">queued</div></div>
@@ -79,7 +101,7 @@
       {% if t.body %}
       <details {{ 'open' if t.status == 'active' }}>
         <summary class="sub">detail</summary>
-        <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
+        <div class="ticket-body prose">{{ render_ticket(t.body, t.refs, ticket_ids, r.slug) | safe }}</div>
       </details>
       {% endif %}
     </article>
@@ -115,7 +137,7 @@
           {% if link.url %}<a class="pill on" href="{{ link.url }}">results ↗</a>{% endif %}
         {% endfor %}
       </div>
-      {% if rec.body %}<div class="ticket-body prose">{{ render_ticket(rec.body) | safe }}</div>{% endif %}
+      {% if rec.body %}<div class="ticket-body prose">{{ render_ticket(rec.body, rec.refs, ticket_ids, r.slug) | safe }}</div>{% endif %}
     </article>
     {% endfor %}
     {% endif %}

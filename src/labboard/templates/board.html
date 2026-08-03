@@ -77,7 +77,7 @@
             {% if t.body %}
             <details>
               <summary style="cursor:pointer">{{ t.title }}</summary>
-              <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
+              <div class="ticket-body prose">{{ render_ticket(t.body, t.refs, ticket_ids.get(r.slug), r.slug) | safe }}</div>
             </details>
             {% else %}{{ t.title }}{% endif %}
             {% for link in t.artifact_links %}
