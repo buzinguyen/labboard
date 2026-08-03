@@ -1,0 +1,99 @@
+{#
+  Buzi's private note for a project.
+
+  Kept in the browser's localStorage and nowhere else: no server write, so the service
+  stays read-only, and no agent can ever read what is written here. Keyed by project, so
+  the box on the dashboard card and the one on the project page are the same note.
+
+  `notebox()` may appear many times on a page; `notebox_script()` exactly once.
+#}
+
+{% macro notebox(slug, ticket_id="", rows=3) %}
+<div class="notebox" data-project="{{ slug }}" data-ticket="{{ ticket_id }}">
+  <div class="nhead">
+    <span>your note</span>
+    <span class="stale-note" hidden></span>
+    <span class="spacer"></span>
+    <span class="saved" hidden>saved</span>
+  </div>
+  <textarea rows="{{ rows }}" placeholder="Why this matters, where you were heading, what to check when it lands. Stays in this browser."></textarea>
+  <div class="nfoot">
+    <button class="ghost" data-act="copy">Copy</button>
+    <button class="ghost" data-act="clear">Clear</button>
+  </div>
+</div>
+{% endmacro %}
+
+
+{% macro notebox_script() %}
+<script>
+// Copy is how a note reaches a ticket — an explicit act, never automatic.
+(function () {
+  var KEY = function (p) { return 'labboard.note.' + p; };
+
+  document.querySelectorAll('.notebox').forEach(function (box) {
+    var project = box.dataset.project;
+    var current = box.dataset.ticket || '';
+    var area    = box.querySelector('textarea');
+    var saved   = box.querySelector('.saved');
+    var stale   = box.querySelector('.stale-note');
+    var timer   = null;
+
+    var stored = {};
+    try { stored = JSON.parse(localStorage.getItem(KEY(project)) || '{}'); } catch (e) { stored = {}; }
+    area.value = stored.text || '';
+
+    // A note written while a different ticket was in flight is still worth keeping,
+    // but you should know it predates the current one.
+    if (stored.text && stored.ticket && current && stored.ticket !== current) {
+      stale.textContent = 'written against ' + stored.ticket;
+      stale.hidden = false;
+    }
+
+    function flash() {
+      saved.hidden = false;
+      clearTimeout(flash._t);
+      flash._t = setTimeout(function () { saved.hidden = true; }, 1200);
+    }
+
+    function persist() {
+      try {
+        if (area.value) {
+          localStorage.setItem(KEY(project), JSON.stringify({
+            text: area.value, ticket: current, at: new Date().toISOString()
+          }));
+        } else {
+          localStorage.removeItem(KEY(project));
+        }
+        flash();
+      } catch (e) { /* private mode, quota — nothing useful to do */ }
+    }
+
+    area.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(persist, 400);
+    });
+    // Don't lose the last keystrokes to a navigation inside the debounce window.
+    area.addEventListener('blur', function () { clearTimeout(timer); persist(); });
+
+    box.querySelector('[data-act=copy]').addEventListener('click', function (ev) {
+      ev.preventDefault();
+      if (!area.value) return;
+      var btn = ev.currentTarget;
+      navigator.clipboard.writeText(area.value).then(function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1200);
+      });
+    });
+
+    box.querySelector('[data-act=clear]').addEventListener('click', function (ev) {
+      ev.preventDefault();
+      if (area.value && !confirm('Clear your note for ' + project + '?')) return;
+      area.value = '';
+      persist();
+      stale.hidden = true;
+    });
+  });
+})();
+</script>
+{% endmacro %}

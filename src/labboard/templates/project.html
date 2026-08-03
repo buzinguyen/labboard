@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% import "_notebox.html" as nb %}
+{% block title %}{{ r.title or r.slug }}{% endblock %}
+{% block content %}
+
+<div class="crumbs">
+  <a href="/projects">Projects</a><span class="sep">/</span><span class="cur">{{ r.slug }}</span>
+</div>
+
+<div class="row">
+  <h1>{{ r.title or r.slug }}</h1>
+  <span class="spacer"></span>
+  <a class="btn ghost" href="/board?project={{ r.slug }}">Table view</a>
+</div>
+<p class="sub">
+  {% if r.main_node %}
+    Tickets live on <b>{{ r.main_node }}</b>{% else %}<em>No device claims this project</em>{% endif %}
+  {%- set others = r.nodes | reject('equalto', r.main_node) | list %}
+  {%- if others %} · also checked out on {{ others | join(', ') }}{% endif %}
+</p>
+
+{% for w in r.warnings %}
+<div class="note warn">{{ w }}</div>
+{% endfor %}
+
+<div class="totals" style="margin-top:14px">
+  <div class="stat"><div class="n">{{ r.counts.active }}</div><div class="k">in flight</div></div>
+  <div class="stat"><div class="n">{{ r.counts.open }}</div><div class="k">queued</div></div>
+  <div class="stat {{ 'bad' if r.counts.blocked }}">
+    <div class="n">{{ r.counts.blocked }}</div><div class="k">blocked</div>
+  </div>
+  <div class="stat {{ 'alert' if r.pending }}">
+    <div class="n">{{ r.pending | length }}</div><div class="k">results waiting</div>
+  </div>
+  <div class="stat"><div class="n">{{ r.counts.done }}</div><div class="k">done</div></div>
+  <div class="stat"><div class="n">{{ r.closed_recently }}</div><div class="k">closed / 30d</div></div>
+</div>
+
+<div class="split">
+  <div class="split-main">
+
+    {% if not r.tickets %}
+    <div class="empty">
+      <p>No tickets yet.</p>
+      <p class="sub">
+        Write one to <code>docs/log/tasks/T001-slug.md</code>
+        {% if r.main_node %}on <code>{{ r.main_node }}</code>{% endif %}.
+      </p>
+    </div>
+    {% endif %}
+
+    {% for status, tickets in groups %}
+    <h2>{{ status }} <span class="sub">({{ tickets | length }})</span></h2>
+    {% for t in tickets %}
+    <article class="ticket {{ 'is-current' if t.status == 'active' }}" id="{{ t.id }}">
+      <div class="thead">
+        <span class="tid mono">{{ t.id }}</span>
+        <span class="st {{ t.status }}">{{ t.status }}</span>
+        <span class="spacer"></span>
+        {% if t.age_days is not none %}
+        <span class="sub">moved {{ t.age_days | int }}d ago</span>
+        {% endif %}
+      </div>
+      <h3>{{ t.title }}</h3>
+
+      <div class="tmeta">
+        {% if t.runs %}<span class="pill" title="rows in experiments.md">runs {{ t.runs | join(', ') }}</span>{% endif %}
+        {% for tag in t.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
+        {% for link in t.artifact_links %}
+          {% if link.url %}
+            <a class="pill on" href="{{ link.url }}">results ↗</a>
+          {% else %}
+            <span class="pill" title="{{ link.label }} is not under any artifact pin, so it cannot be viewed">unpinned artifact</span>
+          {% endif %}
+        {% endfor %}
+        {% if t.closed %}<span class="pill">closed {{ t.closed }}</span>{% endif %}
+      </div>
+
+      {% if t.body %}
+      <details {{ 'open' if t.status == 'active' }}>
+        <summary class="sub">detail</summary>
+        <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% endfor %}
+
+    {% if r.receipts %}
+    <h2 id="receipts">Receipts <span class="sub">({{ r.pending | length }} waiting)</span></h2>
+    <p class="sub">
+      Results other devices reported. Nothing was copied — each links back to the machine
+      that holds it. On {{ r.main_node or 'the main device' }}, fold them in with
+      <code>labboard inbox {{ r.slug }}</code>, then add the receipt id to the ticket's
+      <code>acked:</code> list.
+    </p>
+    {% set pending_ids = r.pending | map(attribute='id') | list %}
+    {% for rec in r.receipts %}
+    <article class="ticket receipt-card {{ 'acked' if rec.id not in pending_ids }}">
+      <div class="thead">
+        <span class="tid mono">{{ rec.id }}</span>
+        <span class="pill">{{ rec.node }}</span>
+        {% if rec.run %}<span class="pill">{{ rec.run }}</span>{% endif %}
+        {% if rec.task %}<a class="pill" href="#{{ rec.task }}">→ {{ rec.task }}</a>{% endif %}
+        <span class="spacer"></span>
+        {% if rec.id not in pending_ids %}
+          <span class="sub">folded in</span>
+        {% else %}
+          <span class="pill on">waiting</span>
+        {% endif %}
+      </div>
+      {% if rec.title %}<h3>{{ rec.title }}</h3>{% endif %}
+      <div class="tmeta">
+        {% for link in rec.artifact_links %}
+          {% if link.url %}<a class="pill on" href="{{ link.url }}">results ↗</a>{% endif %}
+        {% endfor %}
+      </div>
+      {% if rec.body %}<div class="ticket-body prose">{{ render_ticket(rec.body) | safe }}</div>{% endif %}
+    </article>
+    {% endfor %}
+    {% endif %}
+
+  </div>
+
+  <aside class="split-side">
+    {{ nb.notebox(r.slug, r.current.id if r.current else "", rows=10) }}
+    <p class="sub" style="font-size:11px; margin-top:9px">
+      Kept in this browser only — never uploaded, never read by an agent. Copy it into a
+      ticket when it should become shared.
+    </p>
+
+    {% if r.artifact_pins %}
+    <div class="side-head" style="margin-top:16px">Artifacts</div>
+    <div class="side-list">
+      {% for pin in r.artifact_pins %}
+      <a class="side-item" href="{{ pin.url }}">
+        <div class="side-meta">
+          <span class="side-name">{{ pin.title }}</span>
+          <span class="side-dir">{{ pin.node }}{{ ' · missing' if not pin.exists }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </aside>
+</div>
+
+{{ nb.notebox_script() }}
+
+{% endblock %}

@@ -311,6 +311,29 @@ def create_app(self_port: int = 8765) -> FastAPI:
             stale_days=board.STALE_DAYS,
         )
 
+    @app.get("/p/{slug}", response_class=HTMLResponse)
+    async def project_detail(request: Request, slug: str):
+        """One project: every ticket, its receipts, and the same note box as the card."""
+        nodes = await tailnet.gather(self_port=self_port, local=_node_payload())
+        entry = next((r for r in board.rollup(nodes) if r.slug == slug), None)
+        if entry is None:
+            raise HTTPException(404, f"no project {slug!r} on the tailnet")
+
+        # Grouped by status so the page reads top-down as "now, stuck, queued, finished"
+        # rather than as one long undifferentiated list.
+        groups = [
+            (status, [t for t in entry.tickets if t.status == status])
+            for status in ("active", "blocked", "open", "done", "dropped")
+        ]
+        return _page(
+            request,
+            "project.html",
+            r=entry,
+            groups=[(s, ts) for s, ts in groups if ts],
+            render_ticket=render.render_ticket,
+            stale_days=board.STALE_DAYS,
+        )
+
     @app.get("/board", response_class=HTMLResponse)
     async def ticket_board(request: Request, status: str = "", project: str = ""):
         """Every ticket, flat — the drill-down from a project card."""

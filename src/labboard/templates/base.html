@@ -230,18 +230,80 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
 .stat.alert .n { color:var(--warn); }
 .stat.bad .n { color:var(--danger); }
 
-.proj {
-  background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--line);
-  border-radius:var(--radius); padding:15px 17px; margin-bottom:13px;
+/* A grid, not a column: with a dozen projects the point is to see them all at once. */
+.proj-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+  gap:13px; align-items:start;
 }
-.proj.pending { border-left-color:var(--accent); }
-.proj.blocked, .proj.warn { border-left-color:var(--danger); }
-.proj.stale  { border-left-color:var(--warn); }
-.proj.active { border-left-color:var(--accent); }
-.proj > .head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
-.proj > .head h2 { margin:0; font-size:17px; }
-.proj .where { font-size:12px; color:var(--muted); }
-.proj .where b { color:var(--fg); font-weight:600; }
+.proj {
+  background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--line);
+  border-radius:var(--radius); padding:13px 15px 12px;
+  display:flex; flex-direction:column; gap:8px; min-width:0;
+}
+.proj.pending { border-top-color:var(--accent); }
+.proj.blocked, .proj.warn { border-top-color:var(--danger); }
+.proj.stale  { border-top-color:var(--warn); }
+.proj.active { border-top-color:var(--accent); }
+
+.proj-head { display:flex; align-items:baseline; gap:8px; color:inherit; }
+.proj-head h2 { margin:0; font-size:16px; letter-spacing:-.01em; min-width:0; word-break:break-word; }
+.proj-head .go { margin-left:auto; color:var(--muted); flex:none; }
+.proj-head:hover { text-decoration:none; }
+.proj-head:hover h2 { color:var(--accent); }
+.proj-head:hover .go { color:var(--accent); }
+
+.proj-where { font-size:12px; color:var(--muted); margin-top:-4px; }
+.proj-where b { color:var(--fg); font-weight:600; }
+.bad-text { color:var(--danger); font-style:normal; }
+
+.flags { display:flex; flex-direction:column; gap:4px; }
+.flag {
+  font-size:11.5px; color:var(--danger); background:transparent;
+  border:1px solid var(--danger); border-radius:6px; padding:3px 7px; line-height:1.35;
+}
+
+/* the current-ticket preview — the card's main content, and a link into detail */
+.proj .current {
+  display:block; padding:9px 11px; background:var(--bg); border-radius:8px; color:inherit;
+}
+.proj .current:hover { text-decoration:none; background:var(--accent-soft); }
+.cline { display:flex; align-items:center; gap:7px; margin-bottom:3px; }
+.cline .sub { margin-left:auto; font-size:11.5px; }
+.proj .ttitle {
+  font-size:14px; font-weight:550; line-height:1.4;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.tprev {
+  font-size:12px; color:var(--muted); line-height:1.45; margin-top:4px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.cmeta { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; }
+.proj .current.none { color:var(--muted); font-size:13px; }
+
+.waiting {
+  font-size:12.5px; color:var(--accent); background:var(--accent-soft);
+  padding:6px 10px; border-radius:7px; display:block;
+}
+.waiting:hover { text-decoration:none; filter:brightness(1.05); }
+
+.counts { display:flex; gap:9px; flex-wrap:wrap; font-size:12px; }
+.counts a { color:var(--muted); }
+.counts a:hover { color:var(--accent); }
+
+/* ticket cards on the project page */
+.ticket {
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:13px 15px; margin-bottom:10px; scroll-margin-top:70px;
+}
+.ticket.is-current { border-color:var(--accent); }
+.ticket:target { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.ticket .thead { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ticket h3 { margin:5px 0 0; font-size:15px; font-weight:550; line-height:1.4; }
+.tmeta { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:7px; }
+.ticket details { margin-top:9px; }
+.ticket summary { cursor:pointer; font-size:12px; }
+.receipt-card { border-style:dashed; }
+.receipt-card.acked { opacity:.6; }
 
 .pill {
   font-size:11px; padding:1px 8px; border-radius:99px; border:1px solid var(--line);
@@ -251,38 +313,24 @@ table.data th { background:var(--accent-soft); position:sticky; top:0; }
 .pill.warn { background:transparent; color:var(--warn); border-color:var(--warn); }
 .pill.bad  { background:transparent; color:var(--danger); border-color:var(--danger); }
 
-/* the one current ticket */
-.current { margin:11px 0; padding:11px 13px; background:var(--bg); border-radius:8px; }
-.current .tid { font-size:12px; color:var(--muted); }
-.current .ttitle { font-size:15px; font-weight:550; margin:1px 0 6px; }
-.current .meta { display:flex; gap:7px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--muted); }
-.current.none { color:var(--muted); font-size:13px; }
+.tid { font-size:12px; color:var(--muted); }
 
 .ticket-body { font-size:13px; margin-top:9px; padding-top:9px; border-top:1px solid var(--line); }
 .ticket-body h1, .ticket-body h2, .ticket-body h3 { font-size:13px; margin:9px 0 3px; }
 .ticket-body > *:first-child { margin-top:0; }
 .ticket-body p, .ticket-body ul, .ticket-body ol { margin:3px 0; }
 
-/* receipts waiting to be folded in */
-.receipts { margin:10px 0 0; }
-.receipt {
-  display:flex; gap:9px; align-items:baseline; font-size:12.5px; padding:5px 0;
-  border-top:1px dashed var(--line);
-}
-.receipt .who { color:var(--muted); white-space:nowrap; }
-.receipt .what { min-width:0; }
-
 /* private notes — localStorage only, never sent anywhere */
-.notebox { margin-top:11px; }
+.notebox { margin-top:2px; }
 .notebox .nhead {
   display:flex; align-items:center; gap:8px; font-size:11px; color:var(--muted);
   text-transform:uppercase; letter-spacing:.05em; margin-bottom:5px;
 }
 .notebox .nhead .saved { color:var(--accent); text-transform:none; letter-spacing:0; font-size:11px; }
 .notebox textarea {
-  width:100%; min-height:66px; resize:vertical; background:var(--bg); color:var(--fg);
-  border:1px solid var(--line); border-radius:7px; padding:9px 11px;
-  font:inherit; font-size:13px; line-height:1.5;
+  width:100%; resize:vertical; background:var(--bg); color:var(--fg);
+  border:1px solid var(--line); border-radius:7px; padding:8px 10px;
+  font:inherit; font-size:13px; line-height:1.5; display:block;
 }
 .notebox textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
 .notebox .nfoot { display:flex; align-items:center; gap:8px; margin-top:5px; }

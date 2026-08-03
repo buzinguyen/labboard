@@ -15,6 +15,17 @@ from labboard.app import create_app
 from labboard.safety import AccessDenied, resolve
 
 
+@pytest.fixture(autouse=True)
+def no_real_tailnet(monkeypatch):
+    """Never let a route test reach the actual tailnet.
+
+    `/projects` gathers from peers, so without this a live workstation's real projects
+    leak into assertions — which is exactly how these tests first went red. Returning no
+    peers also exercises the standalone path, where `gather()` synthesizes a self node.
+    """
+    monkeypatch.setattr(tailnet, "discover", lambda: [])
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv(config.CONFIG_ENV, str(tmp_path / "pins.toml"))
@@ -304,3 +315,64 @@ def test_still_no_write_routes_beyond_pin_management(client):
         "/pins/{pin_id}/restore",
         "/pins/{pin_id}/delete",
     }
+
+
+# --- the project page ------------------------------------------------------------
+
+
+def test_project_page_shows_every_ticket_not_just_the_current_one(client):
+    resp = client.get("/p/mjlab-go2")
+    assert resp.status_code == 200
+    # The dashboard card previews only the active ticket; this page is the full list.
+    assert "Halve the action scale" in resp.text   # T007, active
+    assert "Earlier thing" in resp.text            # T006, done
+    assert "T006" in resp.text and "T007" in resp.text
+
+
+def test_project_page_groups_tickets_by_status(client):
+    text = client.get("/p/mjlab-go2").text
+    assert text.index("active") < text.index("Halve the action scale")
+    # Each status heading appears with its count.
+    assert "(1)" in text
+
+
+def test_project_page_anchors_each_ticket_for_deep_linking(client):
+    """The dashboard preview links to /p/<slug>#T007, so the id must exist."""
+    assert 'id="T007"' in client.get("/p/mjlab-go2").text
+
+
+def test_unknown_project_is_a_404(client):
+    assert client.get("/p/nope").status_code == 404
+
+
+def test_project_page_does_not_leak_the_source_tree(client):
+    assert "proprietary" not in client.get("/p/mjlab-go2").text
+
+
+def test_project_page_carries_the_same_note_box(client):
+    """Same localStorage key as the card, so it is one note, not two."""
+    text = client.get("/p/mjlab-go2").text
+    assert 'data-project="mjlab-go2"' in text
+    assert "localStorage" in text
+
+
+def test_project_page_renders_ticket_bodies(client):
+    assert "Does it fix the loiter optimum?" in client.get("/p/mjlab-go2").text
+
+
+# --- the dashboard is a grid of links --------------------------------------------
+
+
+def test_dashboard_cards_link_into_the_project(client):
+    text = client.get("/projects").text
+    assert 'class="proj-grid"' in text
+    assert 'href="/p/mjlab-go2"' in text
+
+
+def test_dashboard_preview_links_to_the_current_ticket_anchor(client):
+    assert 'href="/p/mjlab-go2#T007"' in client.get("/projects").text
+
+
+def test_the_note_script_is_emitted_once_per_page(client):
+    """The macro renders per card; the script must not be duplicated per card."""
+    assert client.get("/projects").text.count("labboard.note.") == 1

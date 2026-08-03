@@ -217,3 +217,23 @@ def test_days_since_tolerates_a_full_timestamp_and_rejects_junk():
     assert tasks.days_since(date.today().isoformat() + "T14:30:00Z") == 0
     assert tasks.days_since("not a date") is None
     assert tasks.days_since("") is None
+
+
+# --- card preview ----------------------------------------------------------------
+
+
+def test_preview_skips_headings_and_blank_lines():
+    """A ticket opens with `## Question`; that word previews every ticket identically."""
+    task = tasks.Task(id="T1", title="t", status="open",
+                      body="## Question\n\nDoes halving the action scale help?\n")
+    assert task.preview == "Does halving the action scale help?"
+
+
+def test_preview_strips_list_and_quote_markers():
+    task = tasks.Task(id="T1", title="t", status="open", body="# H\n- first bullet\n")
+    assert task.preview == "first bullet"
+
+
+def test_preview_of_a_headings_only_body_is_empty():
+    task = tasks.Task(id="T1", title="t", status="open", body="## Question\n## Results\n")
+    assert task.preview == ""

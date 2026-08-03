@@ -1,12 +1,13 @@
 {% extends "base.html" %}
+{% import "_notebox.html" as nb %}
 {% block title %}Projects{% endblock %}
 {% block content %}
 
 <h1>Projects</h1>
 <p class="sub">
-  Every project across the tailnet, and the one ticket each is working on. Tickets come
-  from the device that owns the project; results reported by other devices show up as
-  receipts against the ticket they name.
+  Every project across the tailnet, and the one ticket each is working on. Click a card
+  for all of its tickets. Tickets come from the device that owns the project; results
+  reported by other devices show up as receipts against the ticket they name.
 </p>
 
 {% if totals.projects %}
@@ -48,174 +49,73 @@
 </div>
 {% endif %}
 
+<div class="proj-grid">
 {% for r in rollups %}
+{% set cur = r.current %}
 <section class="proj {{ r.health }}">
-  <div class="head">
+  <a class="proj-head" href="/p/{{ r.slug }}">
     <h2>{{ r.title or r.slug }}</h2>
-    {% if r.health == 'pending' %}<span class="pill on">{{ r.pending | length }} result{{ '' if r.pending | length == 1 else 's' }} waiting</span>{% endif %}
-    {% if r.health == 'blocked' %}<span class="pill bad">blocked</span>{% endif %}
-    {% if r.health == 'stale' %}<span class="pill warn">quiet {{ r.stale_days | int }}d</span>{% endif %}
-    {% if r.health == 'idle' %}<span class="pill">no ticket in flight</span>{% endif %}
-    <span class="spacer"></span>
-    <span class="where">
-      {% if r.main_node %}main <b>{{ r.main_node }}</b>{% else %}<em>no main device</em>{% endif %}
-      {%- set others = r.nodes | reject('equalto', r.main_node) | list %}
-      {%- if others %} · also on {{ others | join(', ') }}{% endif %}
-    </span>
+    <span class="go">→</span>
+  </a>
+
+  <div class="proj-where">
+    {% if r.main_node %}main <b>{{ r.main_node }}</b>{% else %}<em class="bad-text">no main device</em>{% endif %}
+    {%- set others = r.nodes | reject('equalto', r.main_node) | list %}
+    {%- if others %} · +{{ others | length }} facilitator{{ '' if others | length == 1 else 's' }}{% endif %}
   </div>
 
-  {% for w in r.warnings %}
-  <div class="note warn" style="margin:8px 0">{{ w }}</div>
-  {% endfor %}
+  {% if r.warnings %}
+  <div class="flags">
+    {% for w in r.warnings %}<div class="flag" title="{{ w }}">⚠ {{ w | truncate(72) }}</div>{% endfor %}
+  </div>
+  {% endif %}
 
-  {% set cur = r.current %}
   {% if cur %}
-  <div class="current">
-    <div class="tid mono">{{ cur.id }}</div>
-    <div class="ttitle">{{ cur.title }}</div>
-    <div class="meta">
+  <a class="current" href="/p/{{ r.slug }}#{{ cur.id }}">
+    <div class="cline">
+      <span class="tid mono">{{ cur.id }}</span>
       <span class="st active">active</span>
-      {% if cur.age_days is not none %}<span>moved {{ cur.age_days | int }}d ago</span>{% endif %}
-      {% if cur.runs %}<span>runs {{ cur.runs | join(', ') }}</span>{% endif %}
-      {% for tag in cur.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
-      {% for link in cur.artifact_links %}
-        {% if link.url %}<a href="{{ link.url }}">results ↗</a>{% else %}<span title="not under any pin">{{ link.label }} (unpinned)</span>{% endif %}
-      {% endfor %}
+      {% if cur.age_days is not none %}<span class="sub">{{ cur.age_days | int }}d</span>{% endif %}
     </div>
-    {% if cur.body %}
-    <details>
-      <summary class="sub" style="cursor:pointer">ticket detail</summary>
-      <div class="ticket-body prose">{{ render_ticket(cur.body) | safe }}</div>
-    </details>
-    {% endif %}
-  </div>
+    <div class="ttitle">{{ cur.title }}</div>
+    {% if cur.preview %}<div class="tprev">{{ cur.preview | striptags | truncate(150) }}</div>{% endif %}
+    <div class="cmeta">
+      {% if cur.runs %}<span class="pill">{{ cur.runs | join(', ') }}</span>{% endif %}
+      {% for tag in cur.tags[:3] %}<span class="tag">{{ tag }}</span>{% endfor %}
+    </div>
+  </a>
   {% else %}
-  <div class="current none">
-    No ticket is <code>active</code>.
-    {% if r.counts.open %}{{ r.counts.open }} queued — promote one to <code>status: active</code>.{% endif %}
-  </div>
+  <a class="current none" href="/p/{{ r.slug }}">
+    No ticket is active.
+    {% if r.counts.open %}{{ r.counts.open }} queued.{% endif %}
+  </a>
   {% endif %}
 
   {% if r.pending %}
-  <div class="receipts">
-    <div class="sub" style="font-size:12px">Results reported, not yet folded into a ticket:</div>
-    {% for rec in r.pending %}
-    <div class="receipt">
-      <span class="who mono">{{ rec.node }}{% if rec.run %} · {{ rec.run }}{% endif %}</span>
-      <span class="what">
-        {{ rec.title }}
-        {%- if rec.task %} <span class="sub">→ {{ rec.task }}</span>{% endif %}
-        {% for link in rec.artifact_links %}
-          {% if link.url %}<a href="{{ link.url }}">↗</a>{% endif %}
-        {% endfor %}
-      </span>
-    </div>
-    {% endfor %}
-    <div class="sub" style="font-size:11.5px; margin-top:6px">
-      On {{ r.main_node or 'the main device' }}:
-      <code>labboard inbox {{ r.slug }}</code>
-    </div>
-  </div>
+  <a class="waiting" href="/p/{{ r.slug }}#receipts">
+    ● {{ r.pending | length }} result{{ '' if r.pending | length == 1 else 's' }} waiting
+    from {{ r.pending | map(attribute='node') | unique | join(', ') }}
+  </a>
   {% endif %}
 
-  <div class="row" style="margin-top:10px; font-size:12px; gap:7px">
-    <a class="pill" href="/board?project={{ r.slug }}">
-      {{ r.counts.open }} open · {{ r.counts.blocked }} blocked · {{ r.counts.done }} done
-    </a>
-    {% if r.closed_recently %}<span class="pill">{{ r.closed_recently }} closed in 30d</span>{% endif %}
-    {% for pin in r.artifact_pins %}
-    <a class="pill" href="{{ pin.url }}">{{ pin.title }} · {{ pin.node }} ↗</a>
+  <div class="counts">
+    {# Only non-zero statuses: "0 open · 0 blocked · 0 done" on a one-ticket project
+       reads as an empty project, which is the opposite of the truth. #}
+    <a href="/p/{{ r.slug }}">{{ r.tickets | length }} ticket{{ '' if r.tickets | length == 1 else 's' }}</a>
+    {% for status in ('blocked', 'open', 'done') %}
+      {% if r.counts[status] %}<a href="/p/{{ r.slug }}">{{ r.counts[status] }} {{ status }}</a>{% endif %}
     {% endfor %}
+    {% if r.artifact_pins %}
+    <span class="spacer"></span>
+    {% for pin in r.artifact_pins[:2] %}<a href="{{ pin.url }}">{{ pin.title | truncate(18) }} ↗</a>{% endfor %}
+    {% endif %}
   </div>
 
-  <div class="notebox" data-project="{{ r.slug }}" data-ticket="{{ cur.id if cur else '' }}">
-    <div class="nhead">
-      <span>your note</span>
-      <span class="stale-note" hidden></span>
-      <span class="spacer"></span>
-      <span class="saved" hidden>saved</span>
-    </div>
-    <textarea placeholder="Why this matters, where you were heading, what to check when it lands. Stays in this browser."></textarea>
-    <div class="nfoot">
-      <button class="ghost" data-act="copy">Copy</button>
-      <button class="ghost" data-act="clear">Clear</button>
-      <span class="sub" style="font-size:11px">
-        Kept in this browser only — never uploaded, never read by an agent.
-      </span>
-    </div>
-  </div>
+  {{ nb.notebox(r.slug, cur.id if cur else "", rows=2) }}
 </section>
 {% endfor %}
+</div>
 
-<script>
-// Private notes. localStorage deliberately: labboard is read-only against your disk,
-// and a note about intent should not become something an agent silently ingests.
-// Copy is how a note reaches a ticket — an explicit act, never automatic.
-(function () {
-  var KEY = function (p) { return 'labboard.note.' + p; };
-
-  document.querySelectorAll('.notebox').forEach(function (box) {
-    var project = box.dataset.project;
-    var current = box.dataset.ticket || '';
-    var area    = box.querySelector('textarea');
-    var saved   = box.querySelector('.saved');
-    var stale   = box.querySelector('.stale-note');
-    var timer   = null;
-
-    var stored = {};
-    try { stored = JSON.parse(localStorage.getItem(KEY(project)) || '{}'); } catch (e) { stored = {}; }
-    area.value = stored.text || '';
-
-    // A note written while a different ticket was in flight is still worth keeping,
-    // but you should know it predates the current one.
-    if (stored.text && stored.ticket && current && stored.ticket !== current) {
-      stale.textContent = 'written against ' + stored.ticket;
-      stale.hidden = false;
-    }
-
-    function flash() {
-      saved.hidden = false;
-      clearTimeout(flash._t);
-      flash._t = setTimeout(function () { saved.hidden = true; }, 1200);
-    }
-
-    function persist() {
-      try {
-        if (area.value) {
-          localStorage.setItem(KEY(project), JSON.stringify({
-            text: area.value, ticket: current, at: new Date().toISOString()
-          }));
-        } else {
-          localStorage.removeItem(KEY(project));
-        }
-        flash();
-      } catch (e) { /* private mode, quota — nothing useful to do */ }
-    }
-
-    area.addEventListener('input', function () {
-      clearTimeout(timer);
-      timer = setTimeout(persist, 400);
-    });
-    // Don't lose the last keystrokes to a navigation inside the debounce window.
-    area.addEventListener('blur', function () { clearTimeout(timer); persist(); });
-
-    box.querySelector('[data-act=copy]').addEventListener('click', function () {
-      if (!area.value) return;
-      navigator.clipboard.writeText(area.value).then(function () {
-        var b = box.querySelector('[data-act=copy]');
-        b.textContent = 'Copied';
-        setTimeout(function () { b.textContent = 'Copy'; }, 1200);
-      });
-    });
-
-    box.querySelector('[data-act=clear]').addEventListener('click', function () {
-      if (area.value && !confirm('Clear your note for ' + project + '?')) return;
-      area.value = '';
-      persist();
-      stale.hidden = true;
-    });
-  });
-})();
-</script>
+{{ nb.notebox_script() }}
 
 {% endblock %}

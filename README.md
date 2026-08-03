@@ -121,8 +121,9 @@ labboard cache [--clear]         # how much derived data has accumulated
 ```
 
 Then open `https://<node>.tail8b90f5.ts.net` for that machine, or `/portal` on any node
-for everything at once. Four pages: **Projects** (the dashboard), **Board** (every
-ticket), **Pins**, **Tailnet**.
+for everything at once. Pages: **Projects** (`/projects`, the dashboard grid) → a project
+(`/p/<slug>`, all its tickets) · **Board** (`/board`, every ticket flat) · **Pins** ·
+**Tailnet**.
 
 ### Finding things once there are many pins
 
@@ -205,11 +206,17 @@ showing as pending.
 
 ### The dashboard
 
-`/projects` is the landing page: one card per project showing its main device, the single
-`active` ticket, results waiting to be folded in, status counts, and how long the current
-ticket has been quiet. Violations of the one-ticket-one-project rule are flagged rather
-than silently resolved — two devices claiming `main`, or three tickets active at once,
-show as warnings on the card.
+`/projects` is the landing page: a **grid** of cards, one per project, so a dozen
+projects fit on one screen instead of scrolling. Each card shows its main device, a
+preview of the single `active` ticket, results waiting to be folded in, ticket counts,
+and how long the current ticket has been quiet. Violations of the one-ticket-one-project
+rule are flagged rather than silently resolved — two devices claiming `main`, or three
+tickets active at once, show as warnings on the card.
+
+Clicking a card opens `/p/<slug>`: every ticket for that project, grouped by status with
+bodies expanded for the active one, plus its receipts and artifact pins. The ticket
+preview on the card deep-links to that ticket's anchor. `/board` remains the flat
+cross-project table, filterable by status and project.
 
 Each card also has a **private note box**. It lives in your browser's `localStorage` and
 nowhere else: never uploaded, never written to disk, never read by an agent. It is for

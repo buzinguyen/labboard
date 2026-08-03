@@ -198,6 +198,20 @@ class Task:
     def order(self) -> int:
         return STATUS_ORDER.get(self.status, len(STATUS_ORDER))
 
+    @property
+    def preview(self) -> str:
+        """First line of real prose, for the dashboard card.
+
+        Skips headings and blank lines: a ticket starts with `## Question`, and showing
+        the word "Question" as the preview of every ticket tells you nothing.
+        """
+        for line in self.body.splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", "---", "|", "```")):
+                continue
+            return line.lstrip("-*> ").strip()
+        return ""
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
