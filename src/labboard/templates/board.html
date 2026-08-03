@@ -1,9 +1,32 @@
 {% extends "base.html" %}
+{% import "_notebox.html" as nb %}
 {% block title %}Board{% endblock %}
 {% block content %}
 
-<h1>Board</h1>
-<p class="sub">Every ticket across every project. Bodies expand in place.</p>
+<div class="crumbs">
+  <a href="/projects">Projects</a>
+  {% if project %}
+    <span class="sep">/</span><a href="/p/{{ project }}">{{ project }}</a>
+    <span class="sep">/</span><span class="cur">table</span>
+  {% else %}
+    <span class="sep">/</span><span class="cur">board</span>
+  {% endif %}
+</div>
+
+<div class="row">
+  <h1>{% if project and rollups %}{{ rollups[0].title or project }}{% else %}{{ project or 'Board' }}{% endif %}</h1>
+  <span class="spacer"></span>
+  {% if project %}
+  <a class="btn ghost" href="/p/{{ project }}">← Back to {{ project }}</a>
+  {% endif %}
+</div>
+<p class="sub">
+  {% if project %}
+    Every ticket in this project as a table. Bodies expand in place.
+  {% else %}
+    Every ticket across every project. Bodies expand in place.
+  {% endif %}
+</p>
 
 <div class="toolbar">
   <div class="seg">
@@ -15,56 +38,78 @@
   </div>
   <span class="spacer"></span>
   {% if project %}
-  <a class="pill on" href="/board{% if status %}?status={{ status }}{% endif %}">{{ project }} ✕</a>
+  <a class="pill on" href="/board{% if status %}?status={{ status }}{% endif %}" title="show every project">{{ project }} ✕</a>
   {% endif %}
-  <a class="btn ghost" href="/projects">Dashboard →</a>
 </div>
 
-{% if not rows %}
-<div class="empty">
-  <p>Nothing here.</p>
-  <p class="sub">
-    {% if not rollups %}
-      No projects are registered. Pin one with
-      <code>labboard pin add . --project &lt;slug&gt; --main</code>.
+<div class="split">
+  <div class="split-main">
+    {% if not rows %}
+    <div class="empty">
+      <p>Nothing here.</p>
+      <p class="sub">
+        {% if not rollups %}
+          No projects are registered. Pin one with
+          <code>labboard pin add . --project &lt;slug&gt; --main</code>.
+        {% else %}
+          No tickets match this filter.
+        {% endif %}
+      </p>
+    </div>
     {% else %}
-      No tickets match this filter.
-    {% endif %}
-  </p>
-</div>
-{% else %}
 
-<table class="tickets">
-  <thead>
-    <tr>
-      <th>Ticket</th><th>Project</th><th>Title</th><th>Status</th><th>Runs</th><th>Moved</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r, t in rows %}
-    <tr>
-      <td class="tid mono">{{ t.id }}</td>
-      <td><a href="/board?project={{ r.slug }}">{{ r.slug }}</a></td>
-      <td>
-        {% if t.body %}
-        <details>
-          <summary style="cursor:pointer">{{ t.title }}</summary>
-          <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
-        </details>
-        {% else %}{{ t.title }}{% endif %}
-        {% for link in t.artifact_links %}
-          {% if link.url %}<a href="{{ link.url }}" class="pill">results ↗</a>{% endif %}
-        {% endfor %}
-      </td>
-      <td><span class="st {{ t.status }}">{{ t.status }}</span></td>
-      <td class="sub mono" style="font-size:12px">{{ t.runs | join(', ') }}</td>
-      <td class="sub" style="font-size:12px; white-space:nowrap">
-        {% if t.age_days is not none %}{{ t.age_days | int }}d{% else %}—{% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
+    <table class="tickets">
+      <thead>
+        <tr>
+          <th>Ticket</th>
+          {% if not project %}<th>Project</th>{% endif %}
+          <th>Title</th><th>Status</th><th>Runs</th><th>Moved</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r, t in rows %}
+        <tr>
+          <td class="tid mono"><a href="/p/{{ r.slug }}#{{ t.id }}">{{ t.id }}</a></td>
+          {% if not project %}
+          <td><a href="/p/{{ r.slug }}">{{ r.slug }}</a></td>
+          {% endif %}
+          <td>
+            {% if t.body %}
+            <details>
+              <summary style="cursor:pointer">{{ t.title }}</summary>
+              <div class="ticket-body prose">{{ render_ticket(t.body) | safe }}</div>
+            </details>
+            {% else %}{{ t.title }}{% endif %}
+            {% for link in t.artifact_links %}
+              {% if link.url %}<a href="{{ link.url }}" class="pill">results ↗</a>{% endif %}
+            {% endfor %}
+          </td>
+          <td><span class="st {{ t.status }}">{{ t.status }}</span></td>
+          <td class="sub mono" style="font-size:12px">{{ t.runs | join(', ') }}</td>
+          <td class="sub" style="font-size:12px; white-space:nowrap">
+            {% if t.age_days is not none %}{{ t.age_days | int }}d{% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  {# The note follows the project, so it sits in the same place here as on /p/<slug>.
+     With no project selected there is no single note to show. #}
+  {% if project and rollups %}
+  {% set r = rollups[0] %}
+  <aside class="split-side plain">
+    <h2>your note</h2>
+    {{ nb.notebox(r.slug, r.current.id if r.current else "", rows=10, heading=false) }}
+    <p class="sub" style="font-size:11px; margin-top:7px">
+      The same note as on the project page — kept in this browser only.
+    </p>
+  </aside>
+  {% endif %}
+</div>
+
+{% if project and rollups %}{{ nb.notebox_script() }}{% endif %}
 
 {% endblock %}

@@ -8,10 +8,14 @@
   `notebox()` may appear many times on a page; `notebox_script()` exactly once.
 #}
 
-{% macro notebox(slug, ticket_id="", rows=3) %}
+{#
+  `heading=false` when the page already supplies its own <h2> above the box — the status
+  spans still render, so "saved" and the stale-ticket marker are never lost.
+#}
+{% macro notebox(slug, ticket_id="", rows=3, heading=true) %}
 <div class="notebox" data-project="{{ slug }}" data-ticket="{{ ticket_id }}">
   <div class="nhead">
-    <span>your note</span>
+    {% if heading %}<span>your note</span>{% endif %}
     <span class="stale-note" hidden></span>
     <span class="spacer"></span>
     <span class="saved" hidden>saved</span>

@@ -122,15 +122,16 @@
 
   </div>
 
-  <aside class="split-side">
-    {{ nb.notebox(r.slug, r.current.id if r.current else "", rows=10) }}
-    <p class="sub" style="font-size:11px; margin-top:9px">
+  <aside class="split-side plain">
+    <h2>your note</h2>
+    {{ nb.notebox(r.slug, r.current.id if r.current else "", rows=10, heading=false) }}
+    <p class="sub" style="font-size:11px; margin-top:7px">
       Kept in this browser only — never uploaded, never read by an agent. Copy it into a
       ticket when it should become shared.
     </p>
 
     {% if r.artifact_pins %}
-    <div class="side-head" style="margin-top:16px">Artifacts</div>
+    <h2>artifacts</h2>
     <div class="side-list">
       {% for pin in r.artifact_pins %}
       <a class="side-item" href="{{ pin.url }}">

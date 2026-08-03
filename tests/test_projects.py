@@ -376,3 +376,43 @@ def test_dashboard_preview_links_to_the_current_ticket_anchor(client):
 def test_the_note_script_is_emitted_once_per_page(client):
     """The macro renders per card; the script must not be duplicated per card."""
     assert client.get("/projects").text.count("labboard.note.") == 1
+
+
+# --- navigation between the two views --------------------------------------------
+
+
+def test_table_view_links_back_to_the_project(client):
+    """The project page offers Table view; the table must offer the way back."""
+    text = client.get("/board?project=mjlab-go2").text
+    assert 'href="/p/mjlab-go2"' in text
+    assert "Back to mjlab-go2" in text
+
+
+def test_table_view_ticket_ids_link_to_their_anchor(client):
+    assert 'href="/p/mjlab-go2#T007"' in client.get("/board?project=mjlab-go2").text
+
+
+def test_unfiltered_board_has_no_back_link_to_nowhere(client):
+    assert "Back to" not in client.get("/board").text
+
+
+def test_table_view_carries_the_project_note(client):
+    """Same localStorage key, so it is one note across card, project page and table."""
+    text = client.get("/board?project=mjlab-go2").text
+    assert 'data-project="mjlab-go2"' in text
+    assert text.count("labboard.note.") == 1
+
+
+def test_unfiltered_board_shows_no_note_box(client):
+    """With every project listed there is no single note to show."""
+    text = client.get("/board").text
+    # Assert on rendered markup, not on class names — those also appear in the
+    # stylesheet, where their presence means nothing.
+    assert "data-project=" not in text
+    assert "labboard.note." not in text
+
+
+def test_the_note_column_is_plain_so_it_aligns_with_the_content(client):
+    """Panel chrome pushed the note a border-plus-padding below the left column."""
+    for url in ("/p/mjlab-go2", "/board?project=mjlab-go2"):
+        assert 'class="split-side plain"' in client.get(url).text, url

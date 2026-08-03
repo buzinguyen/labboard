@@ -176,6 +176,12 @@ button:hover, .btn:hover { filter:brightness(1.07); text-decoration:none; }
   border-radius:var(--radius); padding:12px; position:sticky; top:60px;
   max-height:calc(100vh - 80px); overflow-y:auto;
 }
+/* No panel chrome, so the column's own heading lines up with the heading in
+   .split-main instead of sitting a border-plus-padding lower. */
+.split-side.plain {
+  background:none; border:0; border-radius:0; padding:0;
+}
+.split-main > h2:first-child, .split-side > h2:first-child { margin-top:0; }
 .side-head { display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:13px; }
 .side-head .gcount { margin-left:auto; }
 .side-note { margin-bottom:9px; }
